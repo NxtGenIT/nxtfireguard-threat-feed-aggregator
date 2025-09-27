@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"log"
 	"os"
@@ -9,22 +10,15 @@ import (
 
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/bootstrap"
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/config"
+	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/static"
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/uptime"
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/utils"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
 
-func banner() {
-	b, err := os.ReadFile("static/logo.txt")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(string(b))
-}
-
 func main() {
-	banner()
+	fmt.Print(static.LogoContent)
 
 	godotenv.Load()
 	cfg := config.Load()
