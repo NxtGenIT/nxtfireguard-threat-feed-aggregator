@@ -2,51 +2,122 @@ name: Build & Release Binary
 
 on:
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag name for the release"
+        required: true
+        default: "v1.0.0"
+        type: string
+      release_body:
+        description: "Release notes"
+        required: false
+        default: |
+          Changes in this Release
+          - Automated release
+        type: string
+      prerelease:
+        description: "Mark as prerelease"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
-  build:
-    name: Build Go binary
+  build-and-release:
+    name: Build Go binary and create release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: "1.24"
 
-      - name: Enable Go modules
-        run: go mod tidy
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-      - name: Build Linux binary
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Build binaries
         run: |
           mkdir -p dist
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/nfgtfa ./cmd/aggregator
 
-      - name: Build macOS binary
+          # Linux AMD64
+          GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-s -w -X main.version=${{ inputs.tag_name }}" \
+            -o dist/nfgtfa-linux-amd64 \
+            ./cmd/aggregator
+            
+          # Linux ARM64
+          GOOS=linux GOARCH=arm64 go build \
+            -ldflags="-s -w -X main.version=${{ inputs.tag_name }}" \
+            -o dist/nfgtfa-linux-arm64 \
+            ./cmd/aggregator
+
+          # macOS AMD64 (Intel)
+          GOOS=darwin GOARCH=amd64 go build \
+            -ldflags="-s -w -X main.version=${{ inputs.tag_name }}" \
+            -o dist/nfgtfa-darwin-amd64 \
+            ./cmd/aggregator
+            
+          # macOS ARM64 (Apple Silicon)
+          GOOS=darwin GOARCH=arm64 go build \
+            -ldflags="-s -w -X main.version=${{ inputs.tag_name }}" \
+            -o dist/nfgtfa-darwin-arm64 \
+            ./cmd/aggregator
+            
+          # Windows AMD64
+          GOOS=windows GOARCH=amd64 go build \
+            -ldflags="-s -w -X main.version=${{ inputs.tag_name }}" \
+            -o dist/nfgtfa-windows-amd64.exe \
+            ./cmd/aggregator
+
+      - name: Create checksums
         run: |
-          mkdir -p dist
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/nfgtfa-darwin ./cmd/aggregator
+          cd dist
+          sha256sum * > checksums.txt
 
       - name: Archive binaries
         run: |
-          tar -czf dist/nfgtfa-linux-amd64.tar.gz -C dist nfgtfa
-          tar -czf dist/nfgtfa-darwin-amd64.tar.gz -C dist nfgtfa-darwin
+          cd dist
+
+          # Create archives for each platform
+          tar -czf nfgtfa-linux-amd64.tar.gz nfgtfa-linux-amd64
+          tar -czf nfgtfa-linux-arm64.tar.gz nfgtfa-linux-arm64
+          tar -czf nfgtfa-darwin-amd64.tar.gz nfgtfa-darwin-amd64
+          tar -czf nfgtfa-darwin-arm64.tar.gz nfgtfa-darwin-arm64
+          zip nfgtfa-windows-amd64.zip nfgtfa-windows-amd64.exe
+
+          # Clean up raw binaries (keep only archives and checksums)
+          rm nfgtfa-linux-amd64 nfgtfa-linux-arm64 nfgtfa-darwin-amd64 nfgtfa-darwin-arm64 nfgtfa-windows-amd64.exe
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Release Assets
-        uses: softprops/action-gh-release@v1
-        with:
+          tag_name: ${{ inputs.tag_name }}
+          name: Release ${{ inputs.tag_name }}
+          body: ${{ inputs.release_body }}
+          draft: false
+          prerelease: ${{ inputs.prerelease }}
           files: |
-            dist/nfgtfa-linux-amd64.tar.gz
-            dist/nfgtfa-darwin-amd64.tar.gz
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+          generate_release_notes: true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
