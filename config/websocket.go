@@ -113,18 +113,26 @@ func StartWebSocketClient(cfg *Config, configUpdater *ConfigUpdaterWsImpl) error
 	}
 
 	for {
-		zap.L().Info("[live] Connecting to config updater websocket", zap.String("url", u.String()))
+		zap.L().Info("Connecting to config updater websocket", zap.String("url", u.String()))
 		conn, _, err := dialer.Dial(u.String(), headers)
 		if err != nil {
-			zap.L().Error("[live] Failed to connect to config updater ws", zap.String("url", u.String()), zap.Error(err))
+			zap.L().Error("Failed to connect to config updater ws", zap.String("url", u.String()), zap.Error(err))
 			time.Sleep(5 * time.Second)
 			return err
 		}
 
-		zap.L().Info("[live] Connected to config updater ws")
+		zap.L().Info("Connected to config updater ws")
 		configUpdater.SetConn(conn)
 
-		go PingKeepalive(configUpdater, cfg.WsKeepalivePeriod)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					zap.L().Error("PingKeepalive goroutine panicked", zap.Any("reason", r))
+				}
+			}()
+			PingKeepalive(configUpdater, cfg.WsKeepalivePeriod)
+		}()
+
 		configUpdater.StartListening(cfg)
 
 		// Wait until disconnected
@@ -143,13 +151,27 @@ func PingKeepalive(configUpdater *ConfigUpdaterWsImpl, period time.Duration) {
 	log.Printf("Starting config updater websocket keepalive pings every %s, ws client: %+v", period, configUpdater)
 	ticker := time.NewTicker(period)
 	defer ticker.Stop()
+
+	defer func() {
+		if r := recover(); r != nil {
+			zap.L().Error("PingKeepalive panicked", zap.Any("reason", r))
+		}
+	}()
+
 	for {
 		<-ticker.C
-		configUpdater.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		if err := configUpdater.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-			zap.L().Warn("[live] Failed to send client ping", zap.Error(err))
-			configUpdater.conn.Close()
-			break
+		conn := configUpdater.GetConn()
+		if conn == nil {
+			zap.L().Warn("WebSocket connection is nil, stopping keepalive")
+			continue // wait until StartWebSocketClient sets a new conn
+		}
+
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			zap.L().Warn("Failed to send client ping, closing connection", zap.Error(err))
+			conn.Close()
+			configUpdater.SetConn(nil)
+			continue // next tick will check for new conn
 		}
 	}
 }

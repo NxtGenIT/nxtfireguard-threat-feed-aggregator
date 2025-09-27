@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/assets"
@@ -19,6 +21,23 @@ import (
 
 func main() {
 	fmt.Print(assets.LogoContent)
+
+	if _, err := os.Stat(".env"); os.IsNotExist(err) {
+		fmt.Println("ERROR: .env file not found in current directory")
+		os.Exit(1)
+	}
+
+	// Setup shutdown hook
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
+	defer config.StopAllContainers() // fallback if main exits normally
+
+	go func() {
+		<-stopChan
+		zap.L().Info("Received termination signal, stopping containers...")
+		config.StopAllContainers()
+		os.Exit(0)
+	}()
 
 	godotenv.Load()
 	cfg := config.Load()

@@ -8,6 +8,17 @@ import (
 	"go.uber.org/zap"
 )
 
+func StopAllContainers() {
+	err := stopContainer("nfg-syslog")
+	if err != nil {
+		zap.L().Error("failed to stop container nfg-syslog:")
+	}
+	err = stopContainer("nfg-logstash")
+	if err != nil {
+		zap.L().Error("failed to stop container nfg-logstash:")
+	}
+}
+
 func startContainer(name string, c *Config) error {
 	var configContent string
 	var configType assets.ConfigType
