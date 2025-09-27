@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/assets"
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/bootstrap"
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/config"
-	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/static"
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/uptime"
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/utils"
 	"github.com/joho/godotenv"
@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	fmt.Print(static.LogoContent)
+	fmt.Print(assets.LogoContent)
 
 	godotenv.Load()
 	cfg := config.Load()
