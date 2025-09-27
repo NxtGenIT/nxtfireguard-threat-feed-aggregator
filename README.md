@@ -75,8 +75,6 @@ Run the executable:
 ./nfgtfa-linux-amd64
 ```
 
-You may also manage the executable using a **systemd service** for automatic startup and monitoring.
-
 ---
 
 ## Notes
