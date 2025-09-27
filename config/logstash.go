@@ -2,8 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"go.uber.org/zap"
@@ -21,7 +19,7 @@ func handleLogstashChange(c *Config) {
 		}
 		zap.L().Info("Generated logstash config successfully")
 
-		if err := startContainer("nfg-logstash"); err != nil {
+		if err := startContainer("nfg-logstash", c); err != nil {
 			zap.L().Error("Failed to start logstash container", zap.String("container", "nfg-logstash"), zap.Error(err))
 			return
 		}
@@ -36,12 +34,6 @@ func handleLogstashChange(c *Config) {
 			zap.L().Error("Failed to stop logstash container", zap.String("container", "nfg-logstash"), zap.Error(err))
 		} else {
 			zap.L().Info("Stopped logstash container", zap.String("container", "nfg-logstash"))
-		}
-
-		if err := deleteLogstashConfig(); err != nil {
-			zap.L().Error("Failed to delete logstash config", zap.Error(err))
-		} else {
-			zap.L().Info("Deleted logstash config successfully")
 		}
 	}
 }
@@ -96,26 +88,7 @@ output {
 }`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
 
 	fullConf := strings.Join(inputBlocks, "\n\n") + "\n\n" + outputBlock
+	c.LogstashConfig = fullConf
 
-	if err := os.MkdirAll(filepath.Dir("./logstash/logstash.conf"), 0755); err != nil {
-		return fmt.Errorf("failed to create directory for logstash config: %w", err)
-	}
-
-	if err := os.WriteFile("./logstash/logstash.conf", []byte(fullConf), 0644); err != nil {
-		return fmt.Errorf("failed to write logstash.conf: %w", err)
-	}
-
-	return nil
-}
-
-func deleteLogstashConfig() error {
-	configDir := "./logstash"
-	zap.L().Info("Deleting logstash config directory", zap.String("path", configDir))
-
-	if err := os.RemoveAll(configDir); err != nil {
-		return fmt.Errorf("failed to delete config directory %s: %w", configDir, err)
-	}
-
-	zap.L().Info("Deleted logstash config directory successfully", zap.String("path", configDir))
 	return nil
 }

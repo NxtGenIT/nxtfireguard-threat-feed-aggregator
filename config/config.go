@@ -23,6 +23,10 @@ type Config struct {
 	LokiAddress           string
 	WsKeepalivePeriod     time.Duration
 	ElasticsearchTargets  []ElasticsearchTarget
+
+	// in memory contianer configs
+	SyslogConfig   string
+	LogstashConfig string
 }
 
 func (c *Config) SetSyslogEnabled(v bool) {

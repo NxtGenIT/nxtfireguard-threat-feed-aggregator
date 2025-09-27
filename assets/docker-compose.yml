@@ -7,7 +7,7 @@ services:
       - "514:514/udp"
       - "1025:1025/udp"
     volumes:
-      - ./syslog/syslog-ng.conf:/config/syslog-ng.conf
+      - ../syslog/syslog-ng.conf:/config/syslog-ng.conf
     environment:
       - AUTH_KEY=${AUTH_KEY:-}
       - PUID=1000
@@ -23,8 +23,8 @@ services:
     container_name: nfg-logstash
     restart: unless-stopped
     volumes:
-      - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
-      - ./logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ../logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+      - ../logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
     logging:
       driver: "json-file"
       options:

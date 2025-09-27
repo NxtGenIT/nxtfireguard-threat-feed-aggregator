@@ -2,8 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"go.uber.org/zap"
 )
@@ -20,7 +18,7 @@ func handleSyslogChange(c *Config) {
 		}
 		zap.L().Info("Generated syslog config successfully")
 
-		if err := startContainer("nfg-syslog"); err != nil {
+		if err := startContainer("nfg-syslog", c); err != nil {
 			zap.L().Error("Failed to start syslog container", zap.String("container", "nfg-syslog"), zap.Error(err))
 			return
 		}
@@ -35,12 +33,6 @@ func handleSyslogChange(c *Config) {
 			zap.L().Error("Failed to stop syslog container", zap.String("container", "nfg-syslog"), zap.Error(err))
 		} else {
 			zap.L().Info("Stopped syslog container", zap.String("container", "nfg-syslog"))
-		}
-
-		if err := deleteSyslogConfig(); err != nil {
-			zap.L().Error("Failed to delete syslog config", zap.Error(err))
-		} else {
-			zap.L().Info("Deleted syslog config successfully")
 		}
 	}
 }
@@ -102,26 +94,7 @@ log {
 	`
 
 	fullConf := headers + "\n\n" + source + "\n\n" + destination + "\n\n" + log
+	c.SyslogConfig = fullConf
 
-	if err := os.MkdirAll(filepath.Dir("./syslog/syslog-ng.conf"), 0755); err != nil {
-		return fmt.Errorf("failed to create directory for syslog config: %w", err)
-	}
-
-	if err := os.WriteFile("./syslog/syslog-ng.conf", []byte(fullConf), 0644); err != nil {
-		return fmt.Errorf("failed to write syslog-ng.conf: %w", err)
-	}
-
-	return nil
-}
-
-func deleteSyslogConfig() error {
-	configDir := "./syslog"
-	zap.L().Info("Deleting syslog config directory", zap.String("path", configDir))
-
-	if err := os.RemoveAll(configDir); err != nil {
-		return fmt.Errorf("failed to delete config directory %s: %w", configDir, err)
-	}
-
-	zap.L().Info("Deleted syslog config directory successfully", zap.String("path", configDir))
 	return nil
 }
