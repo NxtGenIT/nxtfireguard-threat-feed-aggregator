@@ -10,11 +10,19 @@ func Wrapper(cfg *config.Config) {
 
 	// Only consider the services that are enabled in the config
 	allExpectedRunning := true
+
+	// Attempt to start Syslog if enabled but not running
 	if cfg.SyslogEnabled && !syslogRunning {
-		allExpectedRunning = false
+		zap.L().Warn("Syslog container not running, attempting to start...")
+		config.HandleSyslogChange(cfg)
+		allExpectedRunning = false // still consider it "not fully running" this tick
 	}
+
+	// Attempt to start Logstash if enabled but not running
 	if cfg.LogstashEnabled && !logstashRunning {
-		allExpectedRunning = false
+		zap.L().Warn("Logstash container not running, attempting to start...")
+		config.HandleLogstashChange(cfg)
+		allExpectedRunning = false // still consider it "not fully running" this tick
 	}
 
 	if allExpectedRunning {

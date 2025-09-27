@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func handleLogstashChange(c *Config) {
+func HandleLogstashChange(c *Config) {
 	if c.LogstashEnabled {
 		zap.L().Info("Logstash enabled, generating config and starting container",
 			zap.String("aggregatorName", c.AggregatorName),

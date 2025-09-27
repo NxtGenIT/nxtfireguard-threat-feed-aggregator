@@ -6,7 +6,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func handleSyslogChange(c *Config) {
+func HandleSyslogChange(c *Config) {
 	if c.SyslogEnabled {
 		zap.L().Info("Syslog enabled, generating config and starting container",
 			zap.String("aggregatorName", c.AggregatorName),

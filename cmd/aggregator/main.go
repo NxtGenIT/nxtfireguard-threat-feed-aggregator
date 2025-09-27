@@ -36,6 +36,7 @@ func main() {
 		<-stopChan
 		zap.L().Info("Received termination signal, stopping containers...")
 		config.StopAllContainers()
+		config.PruneNetworks()
 		os.Exit(0)
 	}()
 

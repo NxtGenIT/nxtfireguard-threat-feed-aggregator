@@ -3,10 +3,31 @@ package config
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/assets"
 	"go.uber.org/zap"
 )
+
+func PruneNetworks() {
+	output, err := exec.Command("docker", "network", "ls", "--format", "{{.Name}}").CombinedOutput()
+	if err != nil {
+		zap.L().Warn("Failed to list Docker networks", zap.Error(err), zap.String("output", string(output)))
+	} else {
+		networks := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, net := range networks {
+			if strings.HasPrefix(net, "nfgtfa-") && strings.HasSuffix(net, "_default") {
+				zap.L().Info("Removing temporary network", zap.String("network", net))
+				out, err := exec.Command("docker", "network", "rm", net).CombinedOutput()
+				if err != nil {
+					zap.L().Warn("Failed to remove network", zap.String("network", net), zap.Error(err), zap.String("output", string(out)))
+				} else {
+					zap.L().Info("Removed network successfully", zap.String("network", net))
+				}
+			}
+		}
+	}
+}
 
 func StopAllContainers() {
 	err := stopContainer("nfg-syslog")

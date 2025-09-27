@@ -32,14 +32,14 @@ type Config struct {
 func (c *Config) SetSyslogEnabled(v bool) {
 	if c.SyslogEnabled != v {
 		c.SyslogEnabled = v
-		go handleSyslogChange(c)
+		go HandleSyslogChange(c)
 	}
 }
 
 func (c *Config) SetLogstashEnabled(v bool) {
 	if c.LogstashEnabled != v {
 		c.LogstashEnabled = v
-		go handleLogstashChange(c)
+		go HandleLogstashChange(c)
 	}
 }
 
