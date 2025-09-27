@@ -1,0 +1,52 @@
+name: Build & Release Binary
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Go binary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24"
+
+      - name: Enable Go modules
+        run: go mod tidy
+
+      - name: Build Linux binary
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/nfgtfa ./cmd/aggregator
+
+      - name: Build macOS binary
+        run: |
+          mkdir -p dist
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/nfgtfa-darwin ./cmd/aggregator
+
+      - name: Archive binaries
+        run: |
+          tar -czf dist/nfgtfa-linux-amd64.tar.gz -C dist nfgtfa
+          tar -czf dist/nfgtfa-darwin-amd64.tar.gz -C dist nfgtfa-darwin
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/nfgtfa-linux-amd64.tar.gz
+            dist/nfgtfa-darwin-amd64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

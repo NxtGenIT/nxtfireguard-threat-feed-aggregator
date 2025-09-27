@@ -1,0 +1,38 @@
+services:
+  nfg-syslog:
+    image: linuxserver/syslog-ng:latest
+    container_name: nfg-syslog
+    restart: unless-stopped
+    ports:
+      - "514:514/udp"
+      - "1025:1025/udp"
+    volumes:
+      - ./syslog/syslog-ng.conf:/config/syslog-ng.conf
+    environment:
+      - AUTH_KEY=${AUTH_KEY:-}
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Berlin
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+  nfg-logstash:
+    image: docker.elastic.co/logstash/logstash:8.14.2
+    container_name: nfg-logstash
+    restart: unless-stopped
+    volumes:
+      - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+      - ./logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - tpotce_nginx_local
+
+networks:
+  tpotce_nginx_local:
+    external: true
