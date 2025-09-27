@@ -69,6 +69,17 @@ func main() {
 		}
 	}()
 
+	// Periodically sync config in case the WebSocket missed an update
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			config.Sync(cfg)
+			<-ticker.C
+		}
+	}()
+
 	// Start sending heartbeats
 	go func() {
 		defer wg.Done()
