@@ -7,9 +7,10 @@ import (
 )
 
 func RestartSyslog(c *Config) {
+	zap.L().Info("Restart container nfg-syslog")
 	err := stopContainer("nfg-syslog")
 	if err != nil {
-		zap.L().Warn("Failed to stop container nfg-syslog:")
+		zap.L().Warn("Failed to stop container nfg-syslog:", zap.Error(err))
 	}
 
 	if err := generateSyslogConfig(c); err != nil {

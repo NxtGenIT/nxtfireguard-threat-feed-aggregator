@@ -12,17 +12,26 @@ func dockerPs(name string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func isContainerHealthy(name string) bool {
-	out, err := exec.Command("docker", "inspect", "--format",
-		"{{.State.Health.Status}}", name).Output()
+func isLogstashContainerHealthy(name string) bool {
+	out, err := exec.Command("docker", "logs", "--tail", "100", name).Output()
 	if err != nil {
+		zap.L().Error("Failed to get docker logs for health check", zap.String("container", name), zap.Error(err))
 		return false
 	}
-	zap.L().Debug("Is Containerhealthy:",
-		zap.String("container name", name),
-		zap.ByteString("out:", out),
+
+	logs := string(out)
+	zap.L().Debug("Recent container logs for health check",
+		zap.String("container", name),
+		zap.String("logs", logs),
 	)
-	return strings.TrimSpace(string(out)) == "healthy"
+
+	// Check for Elasticsearch UnknownHostException in logs
+	if strings.Contains(logs, "UnknownHostException") {
+		zap.L().Warn("Detected Elasticsearch connectivity issues in container logs", zap.String("container", name))
+		return false
+	}
+
+	return true
 }
 
 func isContainerRunning(name string) bool {
@@ -55,7 +64,7 @@ func MonitorServices(runSyslog bool, runLogstash bool) (bool, bool, bool) {
 			zap.L().Warn("Logstash container is not running")
 		}
 
-		logstashHealthy = isContainerHealthy("nfg-logstash")
+		logstashHealthy = isLogstashContainerHealthy("nfg-logstash")
 		if logstashHealthy {
 			zap.L().Info("Logstash container is healthy")
 		} else {

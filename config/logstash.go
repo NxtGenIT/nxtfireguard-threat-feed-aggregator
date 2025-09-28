@@ -8,9 +8,10 @@ import (
 )
 
 func RestartLogstash(c *Config) {
+	zap.L().Info("Restart container nfg-logstash")
 	err := stopContainer("nfg-logstash")
 	if err != nil {
-		zap.L().Warn("Failed to stop container nfg-logstash:")
+		zap.L().Warn("Failed to stop container nfg-logstash:", zap.Error(err))
 	}
 
 	if err := generateLogstashConfig(c); err != nil {
