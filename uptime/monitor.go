@@ -12,17 +12,30 @@ func dockerPs(name string) string {
 	return strings.TrimSpace(string(out))
 }
 
+func isContainerHealthy(name string) bool {
+	out, err := exec.Command("docker", "inspect", "--format",
+		"{{.State.Health.Status}}", name).Output()
+	if err != nil {
+		return false
+	}
+	zap.L().Debug("Is Containerhealthy:",
+		zap.String("container name", name),
+		zap.ByteString("out:", out),
+	)
+	return strings.TrimSpace(string(out)) == "healthy"
+}
+
 func isContainerRunning(name string) bool {
 	status := dockerPs(name)
 	return strings.HasPrefix(strings.ToLower(status), "up")
 }
 
-func MonitorServices(runSyslog bool, runLogstash bool) (bool, bool) {
-	var syslogRunning, logstashRunning bool
+func MonitorServices(runSyslog bool, runLogstash bool) (bool, bool, bool) {
+	var syslogRunning, logstashRunning, logstashHealthy bool
 
 	if !runSyslog && !runLogstash {
 		zap.L().Info("No services enabled to monitor.") // all good, nothing needs to run
-		return true, true
+		return true, true, true
 	}
 
 	if runSyslog {
@@ -41,7 +54,14 @@ func MonitorServices(runSyslog bool, runLogstash bool) (bool, bool) {
 		} else {
 			zap.L().Warn("Logstash container is not running")
 		}
+
+		logstashHealthy = isContainerHealthy("nfg-logstash")
+		if logstashHealthy {
+			zap.L().Info("Logstash container is healthy")
+		} else {
+			zap.L().Warn("Logstash container is unhealthy")
+		}
 	}
 
-	return syslogRunning, logstashRunning
+	return syslogRunning, logstashRunning, logstashHealthy
 }

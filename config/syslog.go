@@ -6,6 +6,25 @@ import (
 	"go.uber.org/zap"
 )
 
+func RestartSyslog(c *Config) {
+	err := stopContainer("nfg-syslog")
+	if err != nil {
+		zap.L().Warn("Failed to stop container nfg-syslog:")
+	}
+
+	if err := generateSyslogConfig(c); err != nil {
+		zap.L().Error("Failed to generate syslog config", zap.Error(err))
+		return
+	}
+	zap.L().Info("Generated syslog config successfully")
+
+	if err := startContainer("nfg-syslog", c); err != nil {
+		zap.L().Error("Failed to start syslog container", zap.String("container", "nfg-syslog"), zap.Error(err))
+		return
+	}
+	zap.L().Info("Syslog container started", zap.String("container", "nfg-syslog"))
+}
+
 func HandleSyslogChange(c *Config) {
 	if c.SyslogEnabled {
 		zap.L().Info("Syslog enabled, generating config and starting container",

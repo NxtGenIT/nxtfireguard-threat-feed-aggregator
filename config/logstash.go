@@ -7,6 +7,25 @@ import (
 	"go.uber.org/zap"
 )
 
+func RestartLogstash(c *Config) {
+	err := stopContainer("nfg-logstash")
+	if err != nil {
+		zap.L().Warn("Failed to stop container nfg-logstash:")
+	}
+
+	if err := generateLogstashConfig(c); err != nil {
+		zap.L().Error("Failed to generate logstash config", zap.Error(err))
+		return
+	}
+	zap.L().Info("Generated logstash config successfully")
+
+	if err := startContainer("nfg-logstash", c); err != nil {
+		zap.L().Error("Failed to start logstash container", zap.String("container", "nfg-logstash"), zap.Error(err))
+		return
+	}
+	zap.L().Info("Logstash container started", zap.String("container", "nfg-logstash"))
+}
+
 func HandleLogstashChange(c *Config) {
 	if c.LogstashEnabled {
 		zap.L().Info("Logstash enabled, generating config and starting container",
