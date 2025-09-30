@@ -89,7 +89,7 @@ func stopContainer(name string) error {
 	}
 
 	zap.L().Info("Stopping container", zap.String("name", name))
-	cmd := exec.Command("docker", "compose", "-f", composeFile, "down", name)
+	cmd := exec.Command("docker", "compose", "-f", composeFile, "rm", "-sf", name)
 	output, err := cmd.CombinedOutput()
 	if len(output) > 0 {
 		zap.L().Info("docker compose output", zap.String("output", string(output)))
