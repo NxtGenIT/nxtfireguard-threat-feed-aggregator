@@ -50,12 +50,12 @@ func main() {
 
 	// Sync config
 	if err := config.Sync(cfg); err != nil {
-		zap.L().Fatal("Config sync failed", zap.Error(err))
+		zap.L().Fatal("Initial config sync failed", zap.Error(err))
 	}
-	zap.L().Info("Config synced successfully.")
+	zap.L().Info("Initial config sync completed successfully.")
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 
 	// WebSocket for receiving config updates
 	configUpdater := config.NewWebsocketImpl()
@@ -70,7 +70,7 @@ func main() {
 		}
 	}()
 
-	// Periodically sync config in case the WebSocket missed an update
+	// Periodically sync config in case the WebSocket missed updates
 	go func() {
 		defer wg.Done()
 		ticker := time.NewTicker(time.Hour)

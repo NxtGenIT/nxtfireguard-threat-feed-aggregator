@@ -13,7 +13,7 @@ func RestartLogstash(c *Config) {
 	// Check if container "nfg-logstash" exists
 	if containerExists("nfg-logstash") {
 		zap.L().Info("Container nfg-logstash exists, attempting removal")
-		err := stopContainer("nfg-logstash")
+		err := forceRemoveContainer("nfg-logstash")
 		if err != nil {
 			zap.L().Warn("Failed to stop/remove container nfg-logstash", zap.Error(err))
 		}
@@ -53,7 +53,7 @@ func HandleLogstashChange(c *Config) {
 		// Check if container "nfg-logstash" exists
 		if containerExists("nfg-logstash") {
 			zap.L().Info("Container nfg-logstash exists, attempting removal")
-			err := stopContainer("nfg-logstash")
+			err := forceRemoveContainer("nfg-logstash")
 			if err != nil {
 				zap.L().Warn("Failed to stop/remove container nfg-logstash", zap.Error(err))
 			}

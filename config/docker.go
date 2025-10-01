@@ -84,6 +84,23 @@ func startContainer(name string, c *Config) error {
 	return nil
 }
 
+// Force removes a container independently of a docker compose file
+func forceRemoveContainer(name string) error {
+	zap.L().Info("Force removing container", zap.String("name", name))
+
+	cmd := exec.Command("docker", "container", "rm", "-f", name)
+	output, err := cmd.CombinedOutput()
+	if len(output) > 0 {
+		zap.L().Info("docker container rm output", zap.String("output", string(output)))
+	}
+	if err != nil {
+		return fmt.Errorf("failed to force remove container %s: %w", name, err)
+	}
+
+	zap.L().Info("Container force removed successfully", zap.String("name", name))
+	return nil
+}
+
 // Stops a container with the given name using docker compose
 func stopContainer(name string) error {
 	composeFile, err := assets.GetDockerComposeFile("", "")

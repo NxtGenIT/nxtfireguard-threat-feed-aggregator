@@ -8,7 +8,7 @@ import (
 
 func RestartSyslog(c *Config) {
 	zap.L().Info("Restart container nfg-syslog")
-	err := stopContainer("nfg-syslog")
+	err := forceRemoveContainer("nfg-syslog")
 	if err != nil {
 		zap.L().Warn("Failed to stop container nfg-syslog:", zap.Error(err))
 	}
@@ -35,7 +35,7 @@ func HandleSyslogChange(c *Config) {
 		// Check if container "nfg-syslog" exists
 		if containerExists("nfg-syslog") {
 			zap.L().Info("Container nfg-syslog exists, attempting removal")
-			err := stopContainer("nfg-syslog")
+			err := forceRemoveContainer("nfg-syslog")
 			if err != nil {
 				zap.L().Warn("Failed to stop/remove container nfg-syslog", zap.Error(err))
 			}
