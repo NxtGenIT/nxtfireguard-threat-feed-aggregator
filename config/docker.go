@@ -29,6 +29,7 @@ func PruneNetworks() {
 	}
 }
 
+// Stops all nfg containers
 func StopAllContainers() {
 	err := stopContainer("nfg-syslog")
 	if err != nil {
@@ -40,6 +41,7 @@ func StopAllContainers() {
 	}
 }
 
+// Starts a container with the given name using docker compose
 func startContainer(name string, c *Config) error {
 	var configContent string
 	var configType assets.ConfigType
@@ -82,6 +84,7 @@ func startContainer(name string, c *Config) error {
 	return nil
 }
 
+// Stops a container with the given name using docker compose
 func stopContainer(name string) error {
 	composeFile, err := assets.GetDockerComposeFile("", "")
 	if err != nil {
@@ -100,4 +103,24 @@ func stopContainer(name string) error {
 
 	zap.L().Info("Container stopped successfully", zap.String("name", name))
 	return nil
+}
+
+// Checks if a container with the given name exists (including stopped/exited)
+func containerExists(name string) bool {
+	cmd := exec.Command("docker", "ps", "-a", "--filter", "name=^/"+name+"$", "--format", "{{.Names}}")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(output)) == name
+}
+
+// Checks if a docker network with the given name exists
+func networkExists(name string) bool {
+	cmd := exec.Command("docker", "network", "ls", "--filter", "name=^"+name+"$", "--format", "{{.Name}}")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(output)) == name
 }
