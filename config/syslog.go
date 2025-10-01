@@ -32,6 +32,18 @@ func HandleSyslogChange(c *Config) {
 			zap.String("aggregatorName", c.AggregatorName),
 		)
 
+		// Check if container "nfg-syslog" exists
+		if containerExists("nfg-syslog") {
+			zap.L().Info("Container nfg-syslog exists, attempting removal")
+			err := stopContainer("nfg-syslog")
+			if err != nil {
+				zap.L().Warn("Failed to stop/remove container nfg-syslog", zap.Error(err))
+			}
+			zap.L().Info("Successfully stopped/removed container nfg-syslog")
+		} else {
+			zap.L().Info("No existing container nfg-syslog found")
+		}
+
 		if err := generateSyslogConfig(c); err != nil {
 			zap.L().Error("Failed to generate syslog config", zap.Error(err))
 			return

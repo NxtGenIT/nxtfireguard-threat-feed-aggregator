@@ -50,6 +50,25 @@ func HandleLogstashChange(c *Config) {
 			zap.String("aggregatorName", c.AggregatorName),
 		)
 
+		// Check if container "nfg-logstash" exists
+		if containerExists("nfg-logstash") {
+			zap.L().Info("Container nfg-logstash exists, attempting removal")
+			err := stopContainer("nfg-logstash")
+			if err != nil {
+				zap.L().Warn("Failed to stop/remove container nfg-logstash", zap.Error(err))
+			}
+			zap.L().Info("Successfully stopped/removed container nfg-logstash")
+		} else {
+			zap.L().Info("No existing container nfg-logstash found")
+		}
+
+		// Check if the "tpotce_nginx_local" network exists
+		if !networkExists("tpotce_nginx_local") {
+			zap.L().Warn("Docker network tpotce_nginx_local does not exist; wont start nfg-logstash container without this network")
+			return
+		}
+		zap.L().Info("Docker network tpotce_nginx_local is present")
+
 		if err := generateLogstashConfig(c); err != nil {
 			zap.L().Error("Failed to generate logstash config", zap.Error(err))
 			return

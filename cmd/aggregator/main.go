@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/assets"
-	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/bootstrap"
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/config"
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/uptime"
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/utils"
@@ -49,9 +48,11 @@ func main() {
 
 	zap.L().Info("Threat Feed Aggregator starting up...")
 
-	if err := bootstrap.InitializeSystem(cfg); err != nil {
-		zap.L().Fatal("Startup failed", zap.Error(err))
+	// Sync config
+	if err := config.Sync(cfg); err != nil {
+		zap.L().Fatal("Config sync failed", zap.Error(err))
 	}
+	zap.L().Info("Config synced successfully.")
 
 	var wg sync.WaitGroup
 	wg.Add(2)
