@@ -148,7 +148,8 @@ func StartWebSocketClient(cfg *Config, configUpdater *ConfigUpdaterWsImpl) error
 }
 
 func PingKeepalive(configUpdater *ConfigUpdaterWsImpl, period time.Duration) {
-	log.Printf("Starting config updater websocket keepalive pings every %s, ws client: %+v", period, configUpdater)
+	zap.L().Info("Starting config updater websocket keepalive pings...")
+
 	ticker := time.NewTicker(period)
 	defer ticker.Stop()
 

@@ -1,6 +1,6 @@
 # NxtFireGuard Threat Feed Aggregator
 
-The **NxtFireGuard Threat Feed Aggregator (NFGTFA)** relays threat intelligence feeds to NxtFireGuard and currently supports Cisco Firepower, Cisco ISE and T-Pot.
+The **NxtFireGuard Threat Feed Aggregator** relays threat intelligence feeds to NxtFireGuard and currently supports Cisco Firepower, Cisco ISE and T-Pot.
 
 ---
 
@@ -90,3 +90,8 @@ Run the executable:
 **Purpose:** Forward threat intelligence feeds to NxtFireGuards Threat Collector.
 
 ---
+---
+
+## License
+
+This project is part of the **NxtFireGuard** suite developed by **NxtGenIT**. All rights reserved.

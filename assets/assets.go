@@ -43,7 +43,7 @@ func GetDockerComposeFile(configContent string, configType ConfigType) (string, 
 		if err != nil {
 			return "", fmt.Errorf("failed to create temp directory: %w", err)
 		}
-		zap.L().Info("Created temp directory", zap.String("tempDir", tempDir))
+		zap.L().Debug("Created temp directory", zap.String("tempDir", tempDir))
 	}
 
 	// Start with the original docker-compose content
@@ -58,14 +58,14 @@ func GetDockerComposeFile(configContent string, configType ConfigType) (string, 
 		case SyslogConfig:
 			configFileName = "syslog-ng.conf"
 			originalPath = "../syslog/syslog-ng.conf"
-			zap.L().Info("Preparing syslog config",
+			zap.L().Debug("Preparing syslog config",
 				zap.String("configFile", configFileName),
 				zap.String("originalPath", originalPath))
 
 		case LogstashConfig:
 			configFileName = "logstash.conf"
 			originalPath = "../logstash/logstash.conf"
-			zap.L().Info("Preparing logstash config",
+			zap.L().Debug("Preparing logstash config",
 				zap.String("configFile", configFileName),
 				zap.String("originalPath", originalPath))
 
@@ -88,7 +88,7 @@ func GetDockerComposeFile(configContent string, configType ConfigType) (string, 
 		if err != nil {
 			return "", fmt.Errorf("failed to create %s config file: %w", configType, err)
 		}
-		zap.L().Info("Wrote config file", zap.String("path", configFile))
+		zap.L().Debug("Wrote config file", zap.String("path", configFile))
 
 		// Replace the relative path with absolute temp file path
 		updatedCompose = strings.ReplaceAll(updatedCompose, originalPath, configFile)
