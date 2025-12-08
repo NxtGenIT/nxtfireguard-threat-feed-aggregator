@@ -53,7 +53,7 @@ func Load() *Config {
 		AggregatorName:        getEnv("AGGREGATOR_NAME", ""),
 		AuthSecret:            getEnv("AUTH_SECRET", ""),
 		HeartbeatIdentifier:   getEnv("HEARTBEAT_IDENTIFIER", ""),
-		HeartbeatUrl:          getEnv("HEARTBEAT_URL", ""),
+		HeartbeatUrl:          getEnv("HEARTBEAT_URL", "heartbeat.nxtfireguard.de"),
 		NfgTfaControllerUrl:   getEnv("NFG_TFA_CONTROLLER_URL", "https://controller.collector.nxtfireguard.de"),
 		NfgTfaControllerHost:  getEnv("NFG_TFA_CONTROLLER_HOST", "controller.collector.nxtfireguard.de"),
 		NfgThreatCollectorUrl: getEnv("THREAT_LOG_COLLECTOR_URL", "https://threat.collector.nxtfireguard.de"),

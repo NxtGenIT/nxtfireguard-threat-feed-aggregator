@@ -30,6 +30,7 @@ func Sync(cfg *Config) error {
 		}
 		req.Header.Set("X_AUTH_KEY", cfg.AuthSecret)
 		req.Header.Set("X_AGGREGATOR_NAME", cfg.AggregatorName)
+		zap.L().Debug("request headers", zap.String("X_AUTH_KEY", cfg.AuthSecret), zap.String("X_AGGREGATOR_NAME", cfg.AggregatorName))
 
 		resp, err = http.DefaultClient.Do(req)
 		if err != nil {
