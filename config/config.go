@@ -46,7 +46,7 @@ func (c *Config) SetLogstashEnabled(v bool) {
 func Load() *Config {
 	debug, _ := strconv.ParseBool(getEnv("DEBUG", "false"))
 	insecureSkipVerify, _ := strconv.ParseBool(getEnv("SKIP_VERIFY_TLS", "false"))
-	logToLoki, _ := strconv.ParseBool(getEnv("LOG_TO_LOKI", "false"))
+	logToLoki, _ := strconv.ParseBool(getEnv("LOG_TO_LOKI", "true"))
 
 	cfg := &Config{
 		Debug:                 debug,
@@ -59,7 +59,7 @@ func Load() *Config {
 		NfgThreatCollectorUrl: getEnv("THREAT_LOG_COLLECTOR_URL", "https://threat.collector.nxtfireguard.de"),
 		InsecureSkipVerifyTLS: insecureSkipVerify,
 		LogToLoki:             logToLoki,
-		LokiAddress:           getEnv("LOKI_ADDRESS", "loki.nxtfireguard.de"),
+		LokiAddress:           getEnv("LOKI_ADDRESS", "https://loki.nxtfireguard.de"),
 		WsKeepalivePeriod:     30 * time.Second,
 	}
 
