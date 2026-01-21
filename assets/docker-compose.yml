@@ -1,6 +1,6 @@
 services:
   nfg-syslog:
-    image: linuxserver/syslog-ng:latest
+    image: linuxserver/syslog-ng:4.10.2
     container_name: nfg-syslog
     restart: unless-stopped
     ports:
