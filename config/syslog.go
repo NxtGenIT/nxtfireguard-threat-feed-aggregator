@@ -96,8 +96,8 @@ source s_network_ise {
 	http(
 		url("%s/ise")
 		method("POST")
-		headers("X-AUTH_KEY: %s")
-		headers("X-AGGREGATOR_NAME: %s")
+		msg_data_in_header(no)
+		headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
 		body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
 	);
 };
@@ -106,8 +106,8 @@ destination d_http_firepower {
 	http(
 		url("%s/firepower")
 		method("POST")
-		headers("X-AUTH_KEY: %s")
-		headers("X-AGGREGATOR_NAME: %s")
+		msg_data_in_header(no)
+		headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
 		body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
 	);
 };
