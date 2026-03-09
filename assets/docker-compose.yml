@@ -6,6 +6,7 @@ services:
     ports:
       - "514:514/udp"
       - "1025:1025/udp"
+      - "1026:1026/udp"
     volumes:
       - ../syslog/syslog-ng.conf:/config/syslog-ng.conf
     environment:

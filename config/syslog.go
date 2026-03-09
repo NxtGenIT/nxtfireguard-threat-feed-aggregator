@@ -90,6 +90,10 @@ source s_network_firepower {
 source s_network_ise {
 	syslog(transport("udp") port(1025));
 };
+
+source s_network_opnsense {
+        syslog(transport("udp") port(1026));
+};
 	`
 
 	destination := fmt.Sprintf(`destination d_http_ise {
@@ -111,7 +115,19 @@ destination d_http_firepower {
 		body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
 	);
 };
+
+destination d_http_opnsense {
+        http(
+                url("%s/opnsense")
+                method("POST")
+                msg_data_in_header(no)
+                headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
+                body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
+        );
+};
+
 	`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName,
+		c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName,
 		c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
 
 	log := `log {
@@ -122,6 +138,11 @@ destination d_http_firepower {
 log {
 	source(s_network_firepower);
 	destination(d_http_firepower);
+};
+
+log {
+    source(s_network_opnsense);
+    destination(d_http_opnsense);
 };
 	`
 
