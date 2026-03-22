@@ -65,12 +65,16 @@ func Sync(cfg *Config) error {
 			}
 
 			// update cfg with fetched values
-			cfg.SetSyslogEnabled(response.Config.SyslogEnabled)
-			cfg.SetLogstashEnabled(response.Config.LogstashEnabled)
+			cfg.ApplyRemoteConfig(RemoteConfig{
+				SyslogEnabled:   response.Config.SyslogEnabled,
+				LogstashEnabled: response.Config.LogstashEnabled,
+				SyslogServices:  response.Config.SyslogServices,
+			})
 
 			zap.L().Info("Stored config",
 				zap.Bool("syslogEnabled", cfg.SyslogEnabled),
 				zap.Bool("logstashEnabled", cfg.LogstashEnabled),
+				zap.Any("syslogServices", cfg.SyslogServices),
 			)
 			return nil
 		}

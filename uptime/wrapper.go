@@ -18,8 +18,8 @@ func Wrapper(cfg *config.Config) {
 	// Only consider the services that are enabled in the config
 	allExpectedRunning := true
 
-	// Attempt to start Syslog if enabled but not running
-	if cfg.SyslogEnabled && !syslogRunning {
+	// Attempt to start Syslog if enabled and at least one service enabled but not running
+	if cfg.SyslogEnabled && config.AnyEnabled(cfg.SyslogServices) && !syslogRunning {
 		zap.L().Warn("Syslog container not running, attempting to start...")
 		config.RestartSyslog(cfg)
 		allExpectedRunning = false // still consider it "not fully running" this tick

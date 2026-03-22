@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/models"
 	"go.uber.org/zap"
 )
 
@@ -32,7 +33,13 @@ const (
 	LogstashConfig ConfigType = "logstash"
 )
 
-func GetDockerComposeFile(configContent string, configType ConfigType) (string, error) {
+type ComposeOptions struct {
+	ConfigContent  string
+	ConfigType     ConfigType
+	SyslogServices *models.SyslogServices // nil if not applicable
+}
+
+func GetDockerComposeFile(opts ComposeOptions) (string, error) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -50,17 +57,24 @@ func GetDockerComposeFile(configContent string, configType ConfigType) (string, 
 	updatedCompose := string(dockerComposeContent)
 
 	// Handle config based on type
-	if configContent != "" {
+	if opts.ConfigContent != "" {
 		var configFileName string
 		var originalPath string
 
-		switch configType {
+		switch opts.ConfigType {
 		case SyslogConfig:
 			configFileName = "syslog-ng.conf"
 			originalPath = "../syslog/syslog-ng.conf"
 			zap.L().Debug("Preparing syslog config",
 				zap.String("configFile", configFileName),
 				zap.String("originalPath", originalPath))
+			if opts.SyslogServices != nil {
+				updatedCompose = strings.ReplaceAll(
+					updatedCompose,
+					`      - "{{SYSLOG_PORTS}}"`,
+					buildSyslogPorts(*opts.SyslogServices),
+				)
+			}
 
 		case LogstashConfig:
 			configFileName = "logstash.conf"
@@ -79,14 +93,14 @@ func GetDockerComposeFile(configContent string, configType ConfigType) (string, 
 			updatedCompose = strings.ReplaceAll(updatedCompose, "../logstash/logstash.yml", ymlFile)
 
 		default:
-			return "", fmt.Errorf("unsupported config type: %s", configType)
+			return "", fmt.Errorf("unsupported config type: %s", opts.ConfigType)
 		}
 
 		// Write config to temp file
 		configFile := filepath.Join(tempDir, configFileName)
-		err := os.WriteFile(configFile, []byte(configContent), 0644)
+		err := os.WriteFile(configFile, []byte(opts.ConfigContent), 0644)
 		if err != nil {
-			return "", fmt.Errorf("failed to create %s config file: %w", configType, err)
+			return "", fmt.Errorf("failed to create %s config file: %w", opts.ConfigType, err)
 		}
 		zap.L().Debug("Wrote config file", zap.String("path", configFile))
 
@@ -115,4 +129,21 @@ func Cleanup() {
 		os.RemoveAll(tempDir)
 		tempDir = ""
 	}
+}
+
+func buildSyslogPorts(s models.SyslogServices) string {
+	var ports []string
+	if s.SyslogCiscoFtdEnabled {
+		ports = append(ports, "      - \"514:514/udp\"")
+	}
+	if s.SyslogCiscoIseEnabled {
+		ports = append(ports, "      - \"1025:1025/udp\"")
+	}
+	if s.SyslogOpnsenseEnabled {
+		ports = append(ports, "      - \"1026:1026/udp\"")
+	}
+	if s.SyslogSuricataEnabled {
+		ports = append(ports, "      - \"1027:1027/udp\"")
+	}
+	return strings.Join(ports, "\n")
 }

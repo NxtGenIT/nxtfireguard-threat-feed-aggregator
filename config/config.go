@@ -5,12 +5,15 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/models"
 )
 
 type Config struct {
 	Debug                 bool
 	AggregatorName        string
 	SyslogEnabled         bool
+	SyslogServices        models.SyslogServices
 	LogstashEnabled       bool
 	AuthSecret            string
 	HeartbeatIdentifier   string
@@ -39,6 +42,41 @@ func (c *Config) SetSyslogEnabled(v bool) {
 func (c *Config) SetLogstashEnabled(v bool) {
 	if c.LogstashEnabled != v {
 		c.LogstashEnabled = v
+		go HandleLogstashChange(c)
+	}
+}
+
+func (c *Config) SetSyslogServices(services models.SyslogServices) {
+	if c.SyslogServices != services {
+		c.SyslogServices = services
+		go HandleSyslogChange(c)
+	}
+}
+
+func AnyEnabled(s models.SyslogServices) bool {
+	return s.SyslogCiscoFtdEnabled ||
+		s.SyslogCiscoIseEnabled ||
+		s.SyslogOpnsenseEnabled ||
+		s.SyslogSuricataEnabled
+}
+
+// ApplyRemoteConfig applies all remote config changes atomically,
+// then fires handlers only for what actually changed.
+func (c *Config) ApplyRemoteConfig(r RemoteConfig) {
+	syslogDirty := c.SyslogEnabled != r.SyslogEnabled ||
+		c.SyslogServices != r.SyslogServices
+
+	logstashDirty := c.LogstashEnabled != r.LogstashEnabled
+
+	// Apply all mutations synchronously before any goroutine is spawned
+	c.SyslogEnabled = r.SyslogEnabled
+	c.SyslogServices = r.SyslogServices
+	c.LogstashEnabled = r.LogstashEnabled
+
+	if syslogDirty {
+		go HandleSyslogChange(c)
+	}
+	if logstashDirty {
 		go HandleLogstashChange(c)
 	}
 }
