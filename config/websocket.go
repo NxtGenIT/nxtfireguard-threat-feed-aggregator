@@ -76,12 +76,16 @@ func (u *ConfigUpdaterWsImpl) StartListening(cfg *Config) {
 					continue
 				}
 				// update cfg with received values
-				cfg.SetSyslogEnabled(data.SyslogEnabled)
-				cfg.SetLogstashEnabled(data.LogstashEnabled)
+				cfg.ApplyRemoteConfig(RemoteConfig{
+					SyslogEnabled:   data.SyslogEnabled,
+					LogstashEnabled: data.LogstashEnabled,
+					SyslogServices:  data.SyslogServices,
+				})
 
 				zap.L().Info("Stored config",
 					zap.Bool("syslogEnabled", cfg.SyslogEnabled),
 					zap.Bool("logstashEnabled", cfg.LogstashEnabled),
+					zap.Any("syslogServices", cfg.SyslogServices),
 				)
 			}
 		}

@@ -27,8 +27,10 @@ func RestartSyslog(c *Config) {
 }
 
 func HandleSyslogChange(c *Config) {
-	if c.SyslogEnabled {
-		zap.L().Info("Syslog enabled, generating config and starting container",
+	shouldRun := c.SyslogEnabled && AnyEnabled(c.SyslogServices)
+
+	if shouldRun {
+		zap.L().Info("Syslog enabled with active services, generating config and starting container",
 			zap.String("aggregatorName", c.AggregatorName),
 		)
 
@@ -79,33 +81,51 @@ func generateSyslogConfig(c *Config) error {
 @include "scl.conf"
 	`
 
-	source := `source s_local {
+	// Sources
+	source := `
+source s_local {
 	internal();
-};
-
-source s_network_firepower {
-	syslog(transport("udp") port(514));
-};
-
-source s_network_ise {
-	syslog(transport("udp") port(1025));
-};
-
-source s_network_opnsense {
-        syslog(transport("udp") port(1026));
 };
 	`
 
-	destination := fmt.Sprintf(`destination d_http_ise {
-	http(
-		url("%s/ise")
-		method("POST")
-		msg_data_in_header(no)
-		headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
-		body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
-	);
+	if c.SyslogServices.SyslogCiscoFtdEnabled {
+		source += `
+source s_network_firepower {
+	syslog(transport("udp") port(514));
 };
+		`
+	}
 
+	if c.SyslogServices.SyslogCiscoIseEnabled {
+		source += `
+source s_network_ise {
+	syslog(transport("udp") port(1025));
+};
+		`
+	}
+
+	if c.SyslogServices.SyslogOpnsenseEnabled {
+		source += `
+source s_network_opnsense {
+	syslog(transport("udp") port(1026));
+};
+		`
+	}
+
+	if c.SyslogServices.SyslogSuricataEnabled {
+		source += `
+source s_network_suricata {
+    internal();
+    syslog(transport("udp") port(1027));
+};
+		`
+	}
+
+	// Destinations
+	var destination string
+
+	if c.SyslogServices.SyslogCiscoFtdEnabled {
+		destination += fmt.Sprintf(`
 destination d_http_firepower {
 	http(
 		url("%s/firepower")
@@ -115,7 +135,25 @@ destination d_http_firepower {
 		body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
 	);
 };
+		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
+	}
 
+	if c.SyslogServices.SyslogCiscoIseEnabled {
+		destination += fmt.Sprintf(`
+destination d_http_ise {
+	http(
+		url("%s/ise")
+		method("POST")
+		msg_data_in_header(no)
+		headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
+		body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
+	);
+};
+		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
+	}
+
+	if c.SyslogServices.SyslogOpnsenseEnabled {
+		destination += fmt.Sprintf(`
 destination d_http_opnsense {
         http(
                 url("%s/opnsense")
@@ -125,26 +163,61 @@ destination d_http_opnsense {
                 body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
         );
 };
+		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
+	}
 
-	`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName,
-		c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName,
-		c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
-
-	log := `log {
-	source(s_network_ise);
-	destination(d_http_ise);
+	if c.SyslogServices.SyslogSuricataEnabled {
+		destination += fmt.Sprintf(`
+destination d_http_suricata{
+        http(
+                url("%s/suricata")
+                method("POST")
+                msg_data_in_header(no)
+                headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
+                body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM $MSG")
+        );
 };
+		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
+	}
 
+	// Log
+	var log string
+
+	if c.SyslogServices.SyslogCiscoFtdEnabled {
+		log += `
 log {
 	source(s_network_firepower);
 	destination(d_http_firepower);
 };
+		`
+	}
 
+	if c.SyslogServices.SyslogCiscoIseEnabled {
+		log += `
+log {
+	source(s_network_ise);
+	destination(d_http_ise);
+};
+		`
+	}
+
+	if c.SyslogServices.SyslogOpnsenseEnabled {
+		log += `
 log {
     source(s_network_opnsense);
     destination(d_http_opnsense);
 };
-	`
+		`
+	}
+
+	if c.SyslogServices.SyslogSuricataEnabled {
+		log += `
+log {
+    source(s_network_suricata);
+    destination(d_http_suricata);
+};
+		`
+	}
 
 	fullConf := headers + "\n\n" + source + "\n\n" + destination + "\n\n" + log
 	c.SyslogConfig = fullConf

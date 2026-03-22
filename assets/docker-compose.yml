@@ -4,9 +4,7 @@ services:
     container_name: nfg-syslog
     restart: unless-stopped
     ports:
-      - "514:514/udp"
-      - "1025:1025/udp"
-      - "1026:1026/udp"
+      - "{{SYSLOG_PORTS}}"
     volumes:
       - ../syslog/syslog-ng.conf:/config/syslog-ng.conf
     environment:

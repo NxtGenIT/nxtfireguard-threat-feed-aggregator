@@ -43,34 +43,37 @@ func StopAllContainers() {
 
 // Starts a container with the given name using docker compose
 func startContainer(name string, c *Config) error {
-	var configContent string
-	var configType assets.ConfigType
+	var opts assets.ComposeOptions
 
 	// Get the appropriate config by container name
 	switch name {
 	case "nfg-syslog":
-		configType = assets.SyslogConfig
-		configContent = c.SyslogConfig
-		if configContent == "" {
+		if c.SyslogConfig == "" {
 			return fmt.Errorf("syslog config is empty, cannot start container")
 		}
+		opts = assets.ComposeOptions{
+			ConfigContent:  c.SyslogConfig,
+			ConfigType:     assets.SyslogConfig,
+			SyslogServices: &c.SyslogServices,
+		}
 	case "nfg-logstash":
-		configType = assets.LogstashConfig
-		configContent = c.LogstashConfig
-		if configContent == "" {
+		if c.LogstashConfig == "" {
 			return fmt.Errorf("logstash config is empty, cannot start container")
 		}
+		opts = assets.ComposeOptions{
+			ConfigContent: c.LogstashConfig,
+			ConfigType:    assets.LogstashConfig,
+		}
 	default:
-		configContent = ""
+		return fmt.Errorf("unknown container name: %s", name)
 	}
 
-	composeFile, err := assets.GetDockerComposeFile(configContent, configType)
+	composeFile, err := assets.GetDockerComposeFile(opts)
 	if err != nil {
 		return fmt.Errorf("failed to get docker-compose file: %w", err)
 	}
 
 	zap.L().Info("Starting container", zap.String("name", name), zap.String("composeFile", composeFile))
-
 	cmd := exec.Command("docker", "compose", "-f", composeFile, "up", "-d", name)
 	output, err := cmd.CombinedOutput()
 	if len(output) > 0 {
@@ -103,7 +106,7 @@ func forceRemoveContainer(name string) error {
 
 // Stops a container with the given name using docker compose
 func stopContainer(name string) error {
-	composeFile, err := assets.GetDockerComposeFile("", "")
+	composeFile, err := assets.GetDockerComposeFile(assets.ComposeOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to get docker-compose file: %w", err)
 	}
