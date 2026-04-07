@@ -96,6 +96,12 @@ func GetDockerComposeFile(opts ComposeOptions) (string, error) {
 			return "", fmt.Errorf("unsupported config type: %s", opts.ConfigType)
 		}
 
+		// If {{SYSLOG_PORTS}} was never replaced (logstash-only mode),
+		// remove the entire nfg-syslog service block from the compose content.
+		if strings.Contains(updatedCompose, "{{SYSLOG_PORTS}}") {
+			updatedCompose = removeSyslogService(updatedCompose)
+		}
+
 		// Write config to temp file
 		configFile := filepath.Join(tempDir, configFileName)
 		err := os.WriteFile(configFile, []byte(opts.ConfigContent), 0644)
@@ -146,4 +152,29 @@ func buildSyslogPorts(s models.SyslogServices) string {
 		ports = append(ports, "      - \"1027:1027/udp\"")
 	}
 	return strings.Join(ports, "\n")
+}
+
+// removeSyslogService strips the nfg-syslog service block from the compose content
+// when syslog is not configured, preventing docker compose from choking on the
+// unresolved {{SYSLOG_PORTS}} placeholder.
+func removeSyslogService(compose string) string {
+	lines := strings.Split(compose, "\n")
+	var result []string
+	skip := false
+
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "nfg-syslog:" {
+			skip = true
+			continue
+		}
+		// Stop at the next sibling service key (same indentation level: "  somekey:")
+		if skip && len(line) >= 2 && line[0] == ' ' && line[1] == ' ' && line[2] != ' ' && strings.HasSuffix(strings.TrimSpace(line), ":") {
+			skip = false
+		}
+		if !skip {
+			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
 }
