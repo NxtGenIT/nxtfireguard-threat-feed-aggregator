@@ -147,7 +147,7 @@ destination d_http_firepower {
 		msg_data_in_header(no)
 		headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
 		body("<$PRI>$YEAR-$MONTH-${DAY}T$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
-		response-action(400 => drop, 401 => drop, 403 => drop, 404 => drop)
+		response-action(400 => drop, 404 => drop)
 	);
 };
 		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
@@ -162,7 +162,7 @@ destination d_http_ise {
 		msg_data_in_header(no)
 		headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
 		body("<$PRI>$YEAR-$MONTH-${DAY}T$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
-		response-action(400 => drop, 401 => drop, 403 => drop, 404 => drop)
+		response-action(400 => drop, 404 => drop)
 	);
 };
 		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
@@ -177,7 +177,7 @@ destination d_http_opnsense {
                 msg_data_in_header(no)
                 headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
                 body("<$PRI>$YEAR-$MONTH-${DAY}T$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
-                response-action(400 => drop, 401 => drop, 403 => drop, 404 => drop)
+                response-action(400 => drop, 404 => drop)
         );
 };
 		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
@@ -192,7 +192,7 @@ destination d_http_suricata{
                 msg_data_in_header(no)
                 headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
                 body("<$PRI>$YEAR-$MONTH-${DAY}T$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM $MSG")
-                response-action(400 => drop, 401 => drop, 403 => drop, 404 => drop)
+                response-action(400 => drop, 404 => drop)
         );
 };
 		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
