@@ -121,6 +121,20 @@ source s_network_suricata {
 		`
 	}
 
+	// Filters
+	var filter string
+
+	// The OPNsense service only accepts Suricata EVE JSON. Firewalls such as
+	// pfSense forward every syslog line (kernel, nginx, config changes, the
+	// plain-text alert copy), which the collector rejects.
+	if c.SyslogServices.SyslogOpnsenseEnabled {
+		filter += `
+filter f_suricata_eve {
+    program("suricata") and message("^\\s*\\{");
+};
+		`
+	}
+
 	// Destinations
 	var destination string
 
@@ -132,7 +146,8 @@ destination d_http_firepower {
 		method("POST")
 		msg_data_in_header(no)
 		headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
-		body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
+		body("<$PRI>$YEAR-$MONTH-${DAY}T$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
+		response-action(400 => drop, 404 => drop)
 	);
 };
 		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
@@ -146,7 +161,8 @@ destination d_http_ise {
 		method("POST")
 		msg_data_in_header(no)
 		headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
-		body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
+		body("<$PRI>$YEAR-$MONTH-${DAY}T$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
+		response-action(400 => drop, 404 => drop)
 	);
 };
 		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
@@ -160,7 +176,8 @@ destination d_http_opnsense {
                 method("POST")
                 msg_data_in_header(no)
                 headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
-                body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
+                body("<$PRI>$YEAR-$MONTH-${DAY}T$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
+                response-action(400 => drop, 404 => drop)
         );
 };
 		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
@@ -174,7 +191,8 @@ destination d_http_suricata{
                 method("POST")
                 msg_data_in_header(no)
                 headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
-                body("<$PRI>$YEAR-$MONTH-$DAYT$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM $MSG")
+                body("<$PRI>$YEAR-$MONTH-${DAY}T$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM $MSG")
+                response-action(400 => drop, 404 => drop)
         );
 };
 		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
@@ -205,6 +223,7 @@ log {
 		log += `
 log {
     source(s_network_opnsense);
+    filter(f_suricata_eve);
     destination(d_http_opnsense);
 };
 		`
@@ -219,7 +238,7 @@ log {
 		`
 	}
 
-	fullConf := headers + "\n\n" + source + "\n\n" + destination + "\n\n" + log
+	fullConf := headers + "\n\n" + source + "\n\n" + filter + "\n\n" + destination + "\n\n" + log
 	c.SyslogConfig = fullConf
 
 	return nil
