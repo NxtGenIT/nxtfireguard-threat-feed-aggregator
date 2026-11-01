@@ -57,6 +57,7 @@ func AnyEnabled(s models.SyslogServices) bool {
 	return s.SyslogCiscoFtdEnabled ||
 		s.SyslogCiscoIseEnabled ||
 		s.SyslogOpnsenseEnabled ||
+		s.SyslogPfsenseEnabled ||
 		s.SyslogSuricataEnabled
 }
 
