@@ -121,13 +121,21 @@ source s_network_suricata {
 		`
 	}
 
+	if c.SyslogServices.SyslogPfsenseEnabled {
+		source += `
+source s_network_pfsense {
+	syslog(transport("udp") port(1028));
+};
+		`
+	}
+
 	// Filters
 	var filter string
 
-	// The OPNsense service only accepts Suricata EVE JSON. Firewalls such as
-	// pfSense forward every syslog line (kernel, nginx, config changes, the
+	// The OPNsense and pfSense services only accept Suricata EVE JSON. The
+	// firewalls forward every syslog line (kernel, nginx, config changes, the
 	// plain-text alert copy), which the collector rejects.
-	if c.SyslogServices.SyslogOpnsenseEnabled {
+	if c.SyslogServices.SyslogOpnsenseEnabled || c.SyslogServices.SyslogPfsenseEnabled {
 		filter += `
 filter f_suricata_eve {
     program("suricata") and message("^\\s*\\{");
@@ -198,6 +206,21 @@ destination d_http_suricata{
 		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
 	}
 
+	if c.SyslogServices.SyslogPfsenseEnabled {
+		destination += fmt.Sprintf(`
+destination d_http_pfsense {
+        http(
+                url("%s/pfsense")
+                method("POST")
+                msg_data_in_header(no)
+                headers("X-AUTH_KEY: %s", "X-AGGREGATOR_NAME: %s")
+                body("<$PRI>$YEAR-$MONTH-${DAY}T$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM: $MSG")
+                response-action(400 => drop, 404 => drop)
+        );
+};
+		`, c.NfgThreatCollectorUrl, c.AuthSecret, c.AggregatorName)
+	}
+
 	// Log
 	var log string
 
@@ -234,6 +257,16 @@ log {
 log {
     source(s_network_suricata);
     destination(d_http_suricata);
+};
+		`
+	}
+
+	if c.SyslogServices.SyslogPfsenseEnabled {
+		log += `
+log {
+    source(s_network_pfsense);
+    filter(f_suricata_eve);
+    destination(d_http_pfsense);
 };
 		`
 	}

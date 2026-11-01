@@ -151,6 +151,9 @@ func buildSyslogPorts(s models.SyslogServices) string {
 	if s.SyslogSuricataEnabled {
 		ports = append(ports, "      - \"1027:1027/udp\"")
 	}
+	if s.SyslogPfsenseEnabled {
+		ports = append(ports, "      - \"1028:1028/udp\"")
+	}
 	return strings.Join(ports, "\n")
 }
 
