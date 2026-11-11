@@ -1,0 +1,26 @@
+version: "2"
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - unconvert
+    - unparam
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*github.com/gorilla/websocket.Conn).Close
+        - os.Remove
+        - fmt.Fprintf
+    gosec:
+      excludes:
+        - G204 # docker is invoked with arguments by design
+        - G304 # files are read from the aggregator's own state dir
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, noctx, bodyclose]

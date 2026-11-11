@@ -1,23 +1,23 @@
 BINARY_NAME = nfgtfa
 PKG = ./cmd/aggregator
 
-.PHONY: all build clean static musl
+.PHONY: all build test lint docker-test clean
 
-all: build
+all: test build
 
 build:
-	@echo "Building $(BINARY_NAME)..."
-	GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME) $(PKG)
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o $(BINARY_NAME) $(PKG)
 
-static:
-	@echo "Building statically linked $(BINARY_NAME)..."
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o $(BINARY_NAME) $(PKG)
+test:
+	go vet ./...
+	go test -race ./...
 
-musl:
-	@echo "Building musl-linked static binary..."
-	CGO_ENABLED=1 CC=musl-gcc GOOS=linux GOARCH=amd64 \
-	go build -ldflags="-linkmode external -extldflags '-static' -s -w" -o $(BINARY_NAME) $(PKG)
+lint:
+	golangci-lint run ./...
+
+# Needs a running docker daemon; pulls linuxserver/syslog-ng.
+docker-test:
+	go test -tags docker -run Integration -v ./internal/reconcile/
 
 clean:
-	@echo "Cleaning..."
 	rm -f $(BINARY_NAME)
