@@ -18,6 +18,10 @@ const (
 	firstBackoff = 30 * time.Second
 	maxBackoff   = 10 * time.Minute
 	logTail      = 100
+	// stableAfter is how long a restarted container must stay healthy
+	// before its backoff is forgotten. Without it a container that crashes
+	// a minute after each start would be restarted every minute forever.
+	stableAfter = 10 * time.Minute
 	// Logstash logs this when a T-Pot Elasticsearch host does not resolve.
 	// Restarting the container has been the remedy since the first version.
 	upstreamFailure = "UnknownHostException"
@@ -27,6 +31,7 @@ type backoff struct {
 	hash     string
 	failures int
 	next     time.Time
+	started  time.Time // last restart by us; zero if none since it was stable
 }
 
 // Reconciler is not safe for concurrent use; one goroutine owns it.
@@ -37,6 +42,9 @@ type Reconciler struct {
 	log   *zap.Logger
 	now   func() time.Time
 	state map[string]*backoff
+	// legacyDone is set once the leftovers of compose-based versions are
+	// gone; until then every pass tries again.
+	legacyDone bool
 }
 
 func New(rt docker.Runtime, cfg config.Config, log *zap.Logger) *Reconciler {
@@ -65,6 +73,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, s nfg.Settings) Status {
 		problem("cannot list containers: %v", err)
 		return st
 	}
+	if !r.legacyDone {
+		if err := r.removeLegacy(ctx, running); err != nil {
+			problem("cleaning up after the previous version: %v", err)
+		} else {
+			r.legacyDone = true
+		}
+	}
+
 	byName := map[string]docker.Container{}
 	for _, c := range running {
 		byName[c.Name] = c
@@ -134,7 +150,9 @@ func (r *Reconciler) ensure(ctx context.Context, u unit, byName map[string]docke
 		}
 	}
 	if reason == "" {
-		b.failures, b.next = 0, time.Time{}
+		if !b.started.IsZero() && r.now().Sub(b.started) >= stableAfter {
+			b.failures, b.next, b.started = 0, time.Time{}, time.Time{}
+		}
 		return ""
 	}
 
@@ -150,6 +168,7 @@ func (r *Reconciler) ensure(ctx context.Context, u unit, byName map[string]docke
 	if exists && c.Hash == hash {
 		r.fail(b)
 	}
+	b.started = r.now()
 	r.log.Info("container started", zap.String("container", u.spec.Name), zap.String("reason", reason), zap.String("hash", hash))
 	return reason + ", started"
 }
@@ -172,6 +191,8 @@ func (r *Reconciler) start(ctx context.Context, u unit) error {
 		if !ok {
 			return fmt.Errorf("docker network %s does not exist (is T-Pot running?)", u.spec.Network)
 		}
+		// err != nil above covers a daemon that is down: that is reported
+		// as such, not as missing T-Pot.
 	}
 	for name, content := range u.files {
 		if _, err := r.dir.WriteFile(name, content); err != nil {
@@ -184,22 +205,27 @@ func (r *Reconciler) start(ctx context.Context, u unit) error {
 	return r.rt.Run(ctx, u.spec)
 }
 
-// RemoveLegacy removes containers with our names that are not labelled as
-// managed: the docker compose containers of versions before the reconciler.
-func (r *Reconciler) RemoveLegacy(ctx context.Context) {
-	cs, err := r.rt.List(ctx)
-	if err != nil {
-		return
-	}
-	managed := map[string]bool{}
-	for _, c := range cs {
-		managed[c.Name] = true
+// removeLegacy removes what versions before the reconciler left: their
+// docker compose containers (our names, but not labelled as managed) and
+// then their networks, which cannot be removed while a container uses them.
+// managed is the List result of this pass.
+func (r *Reconciler) removeLegacy(ctx context.Context, managed []docker.Container) error {
+	isManaged := map[string]bool{}
+	for _, c := range managed {
+		isManaged[c.Name] = true
 	}
 	for _, name := range []string{SyslogName, LogstashName} {
-		if !managed[name] {
-			_ = r.rt.Remove(ctx, name)
+		if !isManaged[name] {
+			if err := r.rt.Remove(ctx, name); err != nil {
+				return fmt.Errorf("remove old container %s: %w", name, err)
+			}
 		}
 	}
+	removed, err := r.rt.RemoveLegacyNetworks(ctx)
+	if len(removed) > 0 {
+		r.log.Info("removed networks left by older versions", zap.Strings("networks", removed))
+	}
+	return err
 }
 
 // RemoveAll removes every managed container; used on shutdown.

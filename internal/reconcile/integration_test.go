@@ -29,7 +29,7 @@ func TestIntegrationSyslogGetsKeyFromEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	stateDir, _ = filepath.Abs(stateDir)
-	defer os.RemoveAll(stateDir)
+	defer func() { _ = os.RemoveAll(stateDir) }()
 	cfg := config.Config{Name: "agg-it", Key: "it-secret-123", CollectorURL: "http://collector.invalid", StateDir: stateDir}
 	r := New(docker.CLI{}, cfg, zap.NewNop())
 	defer r.RemoveAll(context.Background())
@@ -56,6 +56,25 @@ func TestIntegrationSyslogGetsKeyFromEnvironment(t *testing.T) {
 
 	if st := r.Reconcile(ctx, ftd); !st.Healthy {
 		t.Fatalf("running container not healthy: %+v", st)
+	}
+	// The health check (syslog-ng-ctl stats) must pass in the real image;
+	// docker runs it every 30s.
+	health := ""
+	for ctx.Err() == nil && health != "healthy" {
+		cs, _ := (docker.CLI{}).List(ctx)
+		for _, c := range cs {
+			if c.Name == SyslogName {
+				health = c.Health
+			}
+		}
+		if health == "unhealthy" {
+			out, _ := exec.Command("docker", "inspect", "--format", "{{json .State.Health}}", SyslogName).CombinedOutput()
+			t.Fatalf("health check fails in the real image: %s", out)
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if health != "healthy" {
+		t.Fatalf("never became healthy (last %q)", health)
 	}
 	r.RemoveAll(ctx)
 	if cs, _ := (docker.CLI{}).List(ctx); len(cs) != 0 {

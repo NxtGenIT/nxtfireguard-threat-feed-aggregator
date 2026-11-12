@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/NxtGenIT/nxtfireguard-threat-feed-aggregator/internal/config"
 )
@@ -73,7 +74,9 @@ func (s Spec) RunArgs() []string {
 		args = append(args, "-p", p)
 	}
 	for _, m := range s.Mounts {
-		v := "type=bind,source=" + m.Source + ",target=" + m.Target
+		// docker parses --mount as one CSV record, so a path with a comma
+		// or a quote must be a quoted field.
+		v := "type=bind," + csvField("source="+m.Source) + "," + csvField("target="+m.Target)
 		if m.ReadOnly {
 			v += ",readonly"
 		}
@@ -112,13 +115,44 @@ type Runtime interface {
 	Remove(ctx context.Context, name string) error
 	Logs(ctx context.Context, name string, tail int) (string, error)
 	NetworkExists(ctx context.Context, name string) (bool, error)
+	// RemoveLegacyNetworks deletes networks left by versions before the
+	// reconciler and returns the ones it removed.
+	RemoveLegacyNetworks(ctx context.Context) ([]string, error)
 }
 
-// CLI implements Runtime with the docker binary on PATH.
-type CLI struct{}
+// Default time limits for one docker CLI call. A hung daemon or CLI must
+// not stall the main loop: settings pushes and heartbeats wait on it.
+const (
+	DefaultTimeout = 2 * time.Minute
+	// docker run pulls the image first if it is missing; Logstash is ~800MB.
+	DefaultRunTimeout = 15 * time.Minute
+)
 
-func (CLI) run(ctx context.Context, extraEnv []string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "docker", args...)
+// ErrTimeout is wrapped by errors of docker calls that ran out of time.
+var ErrTimeout = errors.New("timed out")
+
+// CLI implements Runtime with the docker binary on PATH. The zero value
+// uses DefaultTimeout and DefaultRunTimeout.
+type CLI struct {
+	Timeout, RunTimeout time.Duration
+	// Binary is the docker executable; "docker" if empty. Tests set it.
+	Binary string
+}
+
+func (c CLI) run(ctx context.Context, limit time.Duration, extraEnv []string, args ...string) ([]byte, error) {
+	if limit <= 0 {
+		limit = DefaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	bin := c.Binary
+	if bin == "" {
+		bin = "docker"
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
+	// If docker leaves a child holding the output pipes, stop waiting soon
+	// after it was killed.
+	cmd.WaitDelay = 5 * time.Second
 	if len(extraEnv) > 0 {
 		cmd.Env = append(os.Environ(), extraEnv...)
 	}
@@ -126,13 +160,16 @@ func (CLI) run(ctx context.Context, extraEnv []string, args ...string) ([]byte, 
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return out, fmt.Errorf("docker %s: %w after %s (is the docker daemon responding?)", args[0], ErrTimeout, limit)
+		}
 		return out, fmt.Errorf("docker %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return out, nil
 }
 
 func (c CLI) List(ctx context.Context) ([]Container, error) {
-	out, err := c.run(ctx, nil, "ps", "-a", "--no-trunc",
+	out, err := c.run(ctx, c.Timeout, nil, "ps", "-a", "--no-trunc",
 		"--filter", "label="+ManagedLabel+"=true",
 		"--format", `{{.Names}}	{{.State}}	{{.Status}}	{{.Label "`+HashLabel+`"}}`)
 	if err != nil {
@@ -168,12 +205,16 @@ func (c CLI) Run(ctx context.Context, s Spec) error {
 	for k, v := range s.Secrets {
 		env = append(env, k+"="+v.Reveal())
 	}
-	_, err := c.run(ctx, env, s.RunArgs()...)
+	limit := c.RunTimeout
+	if limit <= 0 {
+		limit = DefaultRunTimeout
+	}
+	_, err := c.run(ctx, limit, env, s.RunArgs()...)
 	return err
 }
 
 func (c CLI) Remove(ctx context.Context, name string) error {
-	_, err := c.run(ctx, nil, "rm", "-f", name)
+	_, err := c.run(ctx, c.Timeout, nil, "rm", "-f", name)
 	if err != nil && strings.Contains(err.Error(), "No such container") {
 		return nil
 	}
@@ -181,43 +222,90 @@ func (c CLI) Remove(ctx context.Context, name string) error {
 }
 
 func (c CLI) Logs(ctx context.Context, name string, tail int) (string, error) {
-	cmd := exec.CommandContext(ctx, "docker", "logs", "--tail", fmt.Sprint(tail), name)
 	// Logstash writes to both streams.
-	out, err := cmd.CombinedOutput()
+	out, err := c.combined(ctx, "logs", "--tail", fmt.Sprint(tail), name)
 	if err != nil {
 		return "", fmt.Errorf("docker logs %s: %w", name, err)
 	}
 	return string(out), nil
 }
 
+func (c CLI) combined(ctx context.Context, args ...string) ([]byte, error) {
+	limit := c.Timeout
+	if limit <= 0 {
+		limit = DefaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	bin := c.Binary
+	if bin == "" {
+		bin = "docker"
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.WaitDelay = 5 * time.Second
+	out, err := cmd.CombinedOutput()
+	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("%w after %s", ErrTimeout, limit)
+	}
+	return out, err
+}
+
 func (c CLI) NetworkExists(ctx context.Context, name string) (bool, error) {
-	_, err := c.run(ctx, nil, "network", "inspect", "--format", "{{.Name}}", name)
-	if err == nil {
+	_, err := c.run(ctx, c.Timeout, nil, "network", "inspect", "--format", "{{.Name}}", name)
+	switch {
+	case err == nil:
 		return true, nil
-	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	case isNoSuchNetwork(err):
 		return false, nil
+	default:
+		// The daemon is down, a permission problem, a timeout: not "missing".
+		return false, err
 	}
-	return false, err
+}
+
+func isNoSuchNetwork(err error) bool {
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such network") || strings.Contains(msg, "not found")
 }
 
 // RemoveLegacyNetworks deletes the per-run compose networks (nfgtfa-*_default)
 // that versions before the reconciler left behind.
-func (c CLI) RemoveLegacyNetworks(ctx context.Context) []string {
-	out, err := c.run(ctx, nil, "network", "ls", "--format", "{{.Name}}")
+// A network still in use cannot be removed, so the legacy containers must
+// be gone first; the error then names what is left.
+func (c CLI) RemoveLegacyNetworks(ctx context.Context) ([]string, error) {
+	out, err := c.run(ctx, c.Timeout, nil, "network", "ls", "--format", "{{.Name}}")
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var removed []string
+	var errs []error
 	for _, n := range strings.Fields(string(out)) {
-		if strings.HasPrefix(n, "nfgtfa-") && strings.HasSuffix(n, "_default") {
-			if _, err := c.run(ctx, nil, "network", "rm", n); err == nil {
-				removed = append(removed, n)
+		if IsLegacyNetwork(n) {
+			if _, err := c.run(ctx, c.Timeout, nil, "network", "rm", n); err != nil {
+				errs = append(errs, err)
+				continue
 			}
+			removed = append(removed, n)
 		}
 	}
-	return removed
+	return removed, errors.Join(errs...)
+}
+
+// IsLegacyNetwork matches the per-run compose networks (nfgtfa-*_default).
+func IsLegacyNetwork(name string) bool {
+	return strings.HasPrefix(name, "nfgtfa-") && strings.HasSuffix(name, "_default")
+}
+
+// csvField quotes f as a CSV field if it needs it.
+func csvField(f string) string {
+	if !strings.ContainsAny(f, ",\"\r\n") {
+		return f
+	}
+	return `"` + strings.ReplaceAll(f, `"`, `""`) + `"`
 }
 
 func sortedKeys[V any](m map[string]V) []string {

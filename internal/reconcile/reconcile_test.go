@@ -23,6 +23,9 @@ type fakeDocker struct {
 	networks   map[string]bool
 	logs       map[string]string
 	runErr     error
+	removeErr  map[string]error
+	netErr     error
+	legacyNets []string
 	calls      []string
 }
 
@@ -52,8 +55,21 @@ func (f *fakeDocker) Run(_ context.Context, s docker.Spec) error {
 
 func (f *fakeDocker) Remove(_ context.Context, name string) error {
 	f.calls = append(f.calls, "rm "+name)
+	if err := f.removeErr[name]; err != nil {
+		return err
+	}
 	delete(f.containers, name)
 	return nil
+}
+
+func (f *fakeDocker) RemoveLegacyNetworks(context.Context) ([]string, error) {
+	f.calls = append(f.calls, "rm legacy networks")
+	if f.netErr != nil {
+		return nil, f.netErr
+	}
+	removed := f.legacyNets
+	f.legacyNets = nil
+	return removed, nil
 }
 
 func (f *fakeDocker) Logs(_ context.Context, name string, _ int) (string, error) {
@@ -85,6 +101,7 @@ func setup(t *testing.T) (*Reconciler, *fakeDocker, *clock) {
 	c := &clock{t: time.Unix(1_000_000, 0)}
 	r := New(f, cfg, zap.NewNop())
 	r.now = c.now
+	r.legacyDone = true // TestLegacy* cover the cleanup
 	return r, f, c
 }
 
@@ -189,18 +206,43 @@ func TestCrashLoopBacksOff(t *testing.T) {
 	}
 }
 
-func TestBackoffResetsWhenHealthy(t *testing.T) {
-	r, f, _ := setup(t)
+func TestBackoffResetsWhenStable(t *testing.T) {
+	r, f, clk := setup(t)
 	ctx := context.Background()
 	r.Reconcile(ctx, ftd)
 	f.containers[SyslogName].Running = false
 	r.Reconcile(ctx, ftd) // restart, backoff 30s
-	r.Reconcile(ctx, ftd) // healthy again
+	clk.advance(stableAfter)
+	r.Reconcile(ctx, ftd) // healthy for stableAfter
 	f.takeCalls()
 	f.containers[SyslogName].Running = false
 	r.Reconcile(ctx, ftd)
 	if got := f.takeCalls(); !strings.Contains(got, "run") {
-		t.Fatalf("restart after recovery must be immediate, calls = %q", got)
+		t.Fatalf("restart after a stable run must be immediate, calls = %q", got)
+	}
+}
+
+// A container that crashes a minute after every start looks healthy at one
+// check in between; that must not reset the backoff.
+func TestShortRecoveryKeepsBackoff(t *testing.T) {
+	r, f, clk := setup(t)
+	ctx := context.Background()
+	r.Reconcile(ctx, ftd)
+	var restarts int
+	for range 20 {
+		f.containers[SyslogName].Running = false
+		r.Reconcile(ctx, ftd)
+		if strings.Contains(f.takeCalls(), "run") {
+			restarts++
+		}
+		clk.advance(time.Minute)
+		r.Reconcile(ctx, ftd) // up again for a moment
+		clk.advance(time.Minute)
+	}
+	// 40 minutes: with backoff 30s, 1m, 2m, 4m, 8m, 10m... that is about 7
+	// restarts, not 20.
+	if restarts > 8 {
+		t.Fatalf("%d restarts in 40 minutes: backoff was reset by a short recovery", restarts)
 	}
 }
 
@@ -266,13 +308,64 @@ func TestRunFailureIsReported(t *testing.T) {
 	}
 }
 
-func TestRemoveLegacyKeepsManaged(t *testing.T) {
+func TestLegacyCleanupKeepsManagedAndRunsOnce(t *testing.T) {
 	r, f, _ := setup(t)
 	ctx := context.Background()
 	r.Reconcile(ctx, ftd)
 	f.takeCalls()
-	r.RemoveLegacy(ctx)
-	if got := f.takeCalls(); got != "rm nfg-logstash" {
+	r.legacyDone = false
+	f.legacyNets = []string{"nfgtfa-1_default"}
+	r.Reconcile(ctx, ftd)
+	// Containers first: a network in use cannot be removed.
+	if got := f.takeCalls(); got != "rm nfg-logstash, rm legacy networks" {
 		t.Fatalf("calls = %s", got)
+	}
+	r.Reconcile(ctx, ftd)
+	if got := f.takeCalls(); got != "" {
+		t.Fatalf("cleanup must not repeat after it succeeded, calls = %s", got)
+	}
+}
+
+func TestLegacyCleanupIsRetried(t *testing.T) {
+	r, f, _ := setup(t)
+	ctx := context.Background()
+	r.legacyDone = false
+	f.removeErr = map[string]error{LogstashName: fmt.Errorf("Cannot connect to the Docker daemon")}
+	st := r.Reconcile(ctx, nfg.Settings{})
+	if st.Healthy || !strings.Contains(strings.Join(st.Problems, ";"), "previous version") {
+		t.Fatalf("status %+v", st)
+	}
+	f.takeCalls()
+	f.removeErr = nil
+	f.netErr = fmt.Errorf("network nfgtfa-1_default has active endpoints")
+	if st := r.Reconcile(ctx, nfg.Settings{}); st.Healthy {
+		t.Fatalf("network cleanup failure must be reported: %+v", st)
+	}
+	f.netErr = nil
+	if st := r.Reconcile(ctx, nfg.Settings{}); !st.Healthy {
+		t.Fatalf("status %+v", st)
+	}
+	if !r.legacyDone {
+		t.Fatal("cleanup not marked done")
+	}
+}
+
+func TestSyslogRejectsUnrepresentableSecret(t *testing.T) {
+	r, f, _ := setup(t)
+	r.cfg.Key = `abc"def`
+	st := r.Reconcile(context.Background(), both)
+	if st.Healthy || !strings.Contains(strings.Join(st.Problems, ";"), "AUTH_SECRET") {
+		t.Fatalf("status %+v", st)
+	}
+	if got := f.takeCalls(); strings.Contains(got, "run nfg-syslog") || !strings.Contains(got, "run nfg-logstash") {
+		t.Fatalf("syslog must not start, logstash (env-substituted) may: %s", got)
+	}
+}
+
+func TestSyslogHasHealthCheck(t *testing.T) {
+	r, f, _ := setup(t)
+	r.Reconcile(context.Background(), ftd)
+	if got := strings.Join(f.specs[SyslogName].HealthCmd, " "); got != "syslog-ng-ctl stats -c /config/syslog-ng.ctl" {
+		t.Fatalf("health cmd = %q", got)
 	}
 }

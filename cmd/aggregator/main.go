@@ -60,11 +60,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	cli := docker.CLI{}
-	if removed := cli.RemoveLegacyNetworks(ctx); len(removed) > 0 {
-		log.Info("removed networks left by older versions", zap.Strings("networks", removed))
-	}
-	run(ctx, cfg, log, cli)
+	run(ctx, cfg, log, docker.CLI{})
 }
 
 func newLogger(cfg config.Config) *zap.Logger {
@@ -85,8 +81,8 @@ func newLogger(cfg config.Config) *zap.Logger {
 func run(ctx context.Context, cfg config.Config, log *zap.Logger, rt docker.Runtime) {
 	dir := state.Dir(cfg.StateDir)
 	client := nfg.New(cfg)
+	// The first Reconcile also removes what compose-based versions left.
 	rec := reconcile.New(rt, cfg, log)
-	rec.RemoveLegacy(ctx)
 
 	var settings nfg.Settings
 	known, err := dir.LoadJSON(state.SettingsFile, &settings)

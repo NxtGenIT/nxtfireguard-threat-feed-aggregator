@@ -23,15 +23,17 @@ type Collector struct {
 }
 
 // Syslog returns the syslog-ng.conf for the enabled services.
+//
+// There is no internal() source: the image starts syslog-ng with --stderr,
+// so its own messages (startup, errors, stats) end up in `docker logs
+// nfg-syslog`. Earlier versions fed them into the Suricata relay, which sent
+// syslog-ng's complaints about a failing collector to that same collector.
 func Syslog(c Collector, enabled []services.Service) string {
 	var b strings.Builder
-	b.WriteString("@version: 4.7\n@include \"scl.conf\"\n\nsource s_local {\n\tinternal();\n};\n")
+	b.WriteString("@version: 4.7\n@include \"scl.conf\"\n")
 
 	for _, s := range enabled {
 		fmt.Fprintf(&b, "\nsource s_network_%s {\n", s.ID)
-		if s.WithInternal {
-			b.WriteString("\tinternal();\n")
-		}
 		fmt.Fprintf(&b, "\tsyslog(transport(\"udp\") port(%d));\n};\n", s.Port)
 	}
 
@@ -124,6 +126,17 @@ func Logstash(c Collector, targets []config.ESTarget) (pipeline string, env map[
 `, c.URL, AuthKeyEnv, c.Name)
 
 	return strings.Join(inputs, "\n") + "\n" + output, env, nil
+}
+
+// CheckSyslogSecret reports whether secret can be referenced from the
+// syslog-ng config. syslog-ng substitutes `NAME` before it parses the string
+// literal around it, so a quote, a backslash or a line break in the value
+// would end or corrupt the literal.
+func CheckSyslogSecret(secret config.Secret) error {
+	if strings.ContainsAny(secret.Reveal(), "\"\\`\r\n") {
+		return fmt.Errorf("AUTH_SECRET contains a quote, backslash, backtick or line break, which the syslog-ng config cannot carry")
+	}
+	return nil
 }
 
 func syslogString(s string) string {

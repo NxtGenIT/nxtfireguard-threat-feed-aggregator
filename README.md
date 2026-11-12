@@ -33,14 +33,14 @@ The aggregator reads its settings from environment variables. If a `.env` file e
 | Variable | Default | |
 |---|---|---|
 | `AGGREGATOR_NAME` | — | required |
-| `AUTH_SECRET` | — | required |
+| `AUTH_SECRET` | — | required. The syslog relays cannot use a secret containing `"`, `\`, a backtick or a line break |
 | `HEARTBEAT_IDENTIFIER` | — | if empty, no heartbeats are sent |
 | `HEARTBEAT_URL` | `https://heartbeat.nxtfireguard.de` | |
 | `NFG_TFA_CONTROLLER_URL` | `https://controller.collector.nxtfireguard.de` | the update stream URL is derived from it (`https` becomes `wss`) |
 | `NFG_TFA_CONTROLLER_HOST` | — | optional; replaces only the update stream's host |
 | `THREAT_LOG_COLLECTOR_URL` | `https://threat.collector.nxtfireguard.de` | |
 | `SKIP_VERIFY_TLS` | `false` | turns off certificate checks for the controller and the heartbeat |
-| `NFG_STATE_DIR` | `./nfgtfa-state` | holds the generated configs and the last dashboard settings |
+| `NFG_STATE_DIR` | `./nfgtfa-state` | holds the generated configs and the last dashboard settings. The configs are bind-mounted into the containers, so on macOS the directory must be inside a folder the Docker VM shares (colima and Docker Desktop share only your home directory by default) |
 | `ELASTICSEARCH_TARGETS` | — | JSON list of `{"url","user","pass"}`, used only by the T-Pot relay; entries without `url` or `user` are skipped |
 | `DEBUG` | `false` | turns on debug logging |
 
@@ -58,14 +58,16 @@ Every minute the aggregator checks the containers:
 
 * Containers the settings no longer ask for are removed.
 * A container is recreated only when its configuration changed.
-* A container is restarted if it stopped, if its Docker health check fails, or (for Logstash) if its recent logs show `UnknownHostException`. Repeated restarts wait 30 s, then twice as long each time, up to 10 minutes.
+* A container is restarted if it stopped, if its Docker health check fails, or (for Logstash) if its recent logs show `UnknownHostException`. Repeated restarts wait 30 s, then twice as long each time, up to 10 minutes. The wait goes back to zero only after the container has stayed healthy for 10 minutes, so a container that crashes shortly after every start keeps backing off.
+* syslog-ng's health check is `syslog-ng-ctl stats`; it fails if syslog-ng did not accept its config. syslog-ng's own messages are in `docker logs nfg-syslog`; they are no longer sent to the collector.
+* Every docker call has a time limit (2 minutes, 15 for `docker run`, which may pull the image). A hung Docker daemon shows up as a `timed out` problem in the log and stops heartbeats, instead of freezing the aggregator.
 * A heartbeat is sent only when every container the settings ask for is running and healthy.
 
 On `SIGINT`/`SIGTERM` the aggregator removes its containers.
 
 Credentials are never written to disk or passed on a command line. The generated syslog-ng and Logstash configs reference environment variables (`NFG_AUTH_KEY`, `NFG_ES_PASS_<n>`). `docker run -e NAME` passes those variables to the containers from the aggregator's own environment.
 
-Containers created by older versions (docker compose, `nfgtfa-*_default` networks) are cleaned up on the first start.
+Containers created by older versions (docker compose) are removed on the first check, then their `nfgtfa-*_default` networks. If Docker is unavailable then, the cleanup is retried on every check until it succeeds, and heartbeats wait for it.
 
 ## Development
 
@@ -75,7 +77,7 @@ make lint         # golangci-lint
 make docker-test  # starts the real syslog-ng image (needs Docker)
 ```
 
-The tests for the syslog-ng and Logstash config compare the output with the configs the previous implementation generated, for every combination of relays (`internal/render/testdata`).
+The tests for the syslog-ng and Logstash config compare the output with the configs the previous implementation generated (minus its `internal()` sources), for every combination of relays (`internal/render/testdata`).
 
 | Package | |
 |---|---|

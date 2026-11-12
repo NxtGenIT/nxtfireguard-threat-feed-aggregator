@@ -47,8 +47,9 @@ func (f *fakeDocker) Remove(_ context.Context, name string) error {
 	return nil
 }
 
-func (f *fakeDocker) Logs(context.Context, string, int) (string, error)   { return "", nil }
-func (f *fakeDocker) NetworkExists(context.Context, string) (bool, error) { return true, nil }
+func (f *fakeDocker) Logs(context.Context, string, int) (string, error)      { return "", nil }
+func (f *fakeDocker) NetworkExists(context.Context, string) (bool, error)    { return true, nil }
+func (f *fakeDocker) RemoveLegacyNetworks(context.Context) ([]string, error) { return nil, nil }
 
 func (f *fakeDocker) ports(name string) string {
 	f.mu.Lock()

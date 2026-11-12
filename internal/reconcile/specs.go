@@ -22,6 +22,10 @@ const (
 	SyslogImage   = "linuxserver/syslog-ng:4.10.2"
 	LogstashImage = "docker.elastic.co/logstash/logstash:8.14.2"
 
+	// syslogCtl is the control socket the linuxserver image starts syslog-ng
+	// with (--control=/config/syslog-ng.ctl).
+	syslogCtl = "/config/syslog-ng.ctl"
+
 	// TPotNetwork is created by T-Pot; Logstash reaches its Elasticsearch there.
 	TPotNetwork = "tpotce_nginx_local"
 )
@@ -56,7 +60,11 @@ func desired(cfg config.Config, dir state.Dir, s nfg.Settings) []unit {
 				Env:     map[string]string{"PUID": "1000", "PGID": "1000", "TZ": "Europe/Berlin"},
 				Secrets: key,
 				Mounts:  []docker.Mount{{Source: dir.Path("syslog-ng", "syslog-ng.conf"), Target: "/config/syslog-ng.conf"}},
+				// Answers only while syslog-ng runs with a config it accepted;
+				// a broken config otherwise looks like a running container.
+				HealthCmd: []string{"syslog-ng-ctl", "stats", "-c", syslogCtl},
 			},
+			err: render.CheckSyslogSecret(cfg.Key),
 		}
 		for _, svc := range enabled {
 			u.spec.Ports = append(u.spec.Ports, fmt.Sprintf("%d:%d/udp", svc.Port, svc.Port))

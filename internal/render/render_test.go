@@ -36,7 +36,8 @@ func toggles(mask int) services.Toggles {
 }
 
 // The goldens are the old output for every combination of services, with the
-// inline secret replaced by the environment reference.
+// inline secret replaced by the environment reference and without the
+// internal() sources (syslog-ng logs to docker logs instead).
 func TestSyslogMatchesPreviousOutput(t *testing.T) {
 	for mask := 0; mask < 32; mask++ {
 		want, err := os.ReadFile(fmt.Sprintf("testdata/syslog-%02d.conf", mask))
@@ -90,5 +91,30 @@ func TestLogstashNeedsATarget(t *testing.T) {
 func TestLogstashRejectsQuotes(t *testing.T) {
 	if _, _, err := Logstash(col, []config.ESTarget{{URL: `http://es"`, User: "u"}}); err == nil {
 		t.Fatal("want error for a quote in the URL")
+	}
+}
+
+func TestSyslogHasNoInternalSource(t *testing.T) {
+	got := Syslog(col, services.Enabled(toggles(31)))
+	if strings.Contains(got, "internal()") {
+		t.Fatalf("syslog-ng's own messages must not be relayed to the collector:\n%s", got)
+	}
+}
+
+func TestCheckSyslogSecret(t *testing.T) {
+	for _, ok := range []config.Secret{"abc-DEF_123", "with space", "p@ss$word!"} {
+		if err := CheckSyslogSecret(ok); err != nil {
+			t.Errorf("%q: %v", ok.Reveal(), err)
+		}
+	}
+	for _, bad := range []config.Secret{`a"b`, `a\b`, "a`b", "a\nb"} {
+		err := CheckSyslogSecret(bad)
+		if err == nil {
+			t.Errorf("%q accepted", bad.Reveal())
+			continue
+		}
+		if strings.Contains(err.Error(), bad.Reveal()) {
+			t.Errorf("error leaks the secret: %v", err)
+		}
 	}
 }

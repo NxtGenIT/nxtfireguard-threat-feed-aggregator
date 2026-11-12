@@ -27,9 +27,6 @@ type Service struct {
 	// ProgramColon puts ": " between $PROGRAM and $MSG in the body. The
 	// Suricata relay has always been sent without it.
 	ProgramColon bool
-	// WithInternal adds syslog-ng's internal() source to this listener, as the
-	// Suricata relay has always done.
-	WithInternal bool
 	Enabled      func(Toggles) bool
 }
 
@@ -41,7 +38,7 @@ var Table = []Service{
 		Enabled: func(t Toggles) bool { return t.CiscoISE }},
 	{ID: "opnsense", Label: "OPNsense", Port: 1026, Route: "/opnsense", ProgramColon: true, SuricataEVEOnly: true,
 		Enabled: func(t Toggles) bool { return t.OPNsense }},
-	{ID: "suricata", Label: "Suricata", Port: 1027, Route: "/suricata", WithInternal: true,
+	{ID: "suricata", Label: "Suricata", Port: 1027, Route: "/suricata",
 		Enabled: func(t Toggles) bool { return t.Suricata }},
 	{ID: "pfsense", Label: "pfSense", Port: 1028, Route: "/pfsense", ProgramColon: true, SuricataEVEOnly: true,
 		Enabled: func(t Toggles) bool { return t.PfSense }},
