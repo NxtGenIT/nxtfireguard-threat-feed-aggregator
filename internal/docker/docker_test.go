@@ -36,7 +36,7 @@ func TestRunArgs(t *testing.T) {
 		"--mount type=bind,source=/state/a.conf,target=/config/a.conf,readonly",
 		"--network net",
 		"-e PUID=1000 -e TZ=Europe/Berlin -e NFG_AUTH_KEY ",
-		`--health-cmd ["CMD","curl","-f","http://localhost"]`,
+		`--health-cmd curl -f http://localhost --health-interval`,
 	} {
 		if !strings.Contains(args, want) {
 			t.Errorf("args missing %q:\n%s", want, args)
@@ -156,5 +156,20 @@ esac`)
 	removed, err := c.RemoveLegacyNetworks(context.Background())
 	if len(removed) != 1 || removed[0] != "nfgtfa-1_default" || err == nil || !strings.Contains(err.Error(), "active endpoints") {
 		t.Fatalf("removed %v, err %v", removed, err)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	for in, want := range map[string]string{
+		"syslog-ng-ctl":                 "syslog-ng-ctl",
+		"http://localhost:9600/_node/x": "http://localhost:9600/_node/x",
+		"a b":                           "'a b'",
+		"it's":                          `'it'"'"'s'`,
+		"":                              "''",
+		"$(rm -rf /)":                   "'$(rm -rf /)'",
+	} {
+		if got := shellQuote(in); got != want {
+			t.Errorf("shellQuote(%q) = %s, want %s", in, got, want)
+		}
 	}
 }

@@ -92,8 +92,14 @@ func (s Spec) RunArgs() []string {
 		args = append(args, "-e", k)
 	}
 	if len(s.HealthCmd) > 0 {
-		cmd, _ := json.Marshal(append([]string{"CMD"}, s.HealthCmd...))
-		args = append(args, "--health-cmd", string(cmd),
+		// docker run takes the health command as one shell string (unlike
+		// compose's ["CMD", ...] list, which it would run as a program
+		// literally named "[CMD,...]").
+		quoted := make([]string, len(s.HealthCmd))
+		for i, a := range s.HealthCmd {
+			quoted[i] = shellQuote(a)
+		}
+		args = append(args, "--health-cmd", strings.Join(quoted, " "),
 			"--health-interval", "30s", "--health-timeout", "10s", "--health-retries", "3")
 	}
 	return append(args, s.Image)
@@ -298,6 +304,14 @@ func (c CLI) RemoveLegacyNetworks(ctx context.Context) ([]string, error) {
 // IsLegacyNetwork matches the per-run compose networks (nfgtfa-*_default).
 func IsLegacyNetwork(name string) bool {
 	return strings.HasPrefix(name, "nfgtfa-") && strings.HasSuffix(name, "_default")
+}
+
+// shellQuote quotes a for /bin/sh if it contains anything but safe characters.
+func shellQuote(a string) string {
+	if a != "" && strings.Trim(a, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./:=@%+,") == "" {
+		return a
+	}
+	return "'" + strings.ReplaceAll(a, "'", `'"'"'`) + "'"
 }
 
 // csvField quotes f as a CSV field if it needs it.
