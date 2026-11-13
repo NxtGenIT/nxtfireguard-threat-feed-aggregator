@@ -52,8 +52,12 @@ func TestUpgradeFromV1(t *testing.T) {
 		t.Fatalf("X-AUTH_KEY %q after upgrade", got.Header.Get("X-AUTH_KEY"))
 	}
 	waitFor(t, 30*time.Second, "heartbeat after upgrade", func() bool {
+		c := Inspect(t, syslogName)
+		if c == nil {
+			return false
+		}
 		for _, h := range b.Heartbeats() {
-			if h.At.After(Inspect(t, syslogName).State.StartedAt) {
+			if h.At.After(c.State.StartedAt) {
 				return true
 			}
 		}

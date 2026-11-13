@@ -165,7 +165,8 @@ func TestSettingsPushed(t *testing.T) {
 	// The same settings again change nothing.
 	b.Push(ftdOnly)
 	never(t, 3*checkEvery, "container recreated for unchanged settings", func() bool {
-		return Inspect(t, syslogName).ID != id
+		c := Inspect(t, syslogName)
+		return c == nil || c.ID != id
 	})
 
 	both := Settings{SyslogEnabled: true, SyslogServices: Services{CiscoFTD: true, CiscoISE: true}}
@@ -233,7 +234,7 @@ func TestRestartWithoutController(t *testing.T) {
 		return len(a2.LogLines("starting from saved settings")) > 0
 	})
 	waitFor(t, 5*checkEvery, "heartbeat without controller", func() bool { return len(b.Heartbeats()) > hb })
-	if c := Inspect(t, syslogName); c.ID != id {
+	if c := Inspect(t, syslogName); c == nil || c.ID != id {
 		t.Fatal("container recreated although its settings did not change")
 	}
 	mSaved := marker("saved")
@@ -271,12 +272,16 @@ func TestContainerRecovery(t *testing.T) {
 	time.Sleep(checkEvery) // a heartbeat triggered just before the stop may still arrive
 	hb := len(b.Heartbeats())
 	never(t, 15*time.Second, "heartbeat while syslog-ng is down", func() bool {
-		return len(b.Heartbeats()) > hb || Inspect(t, syslogName).State.Running
+		c := Inspect(t, syslogName)
+		return len(b.Heartbeats()) > hb || (c != nil && c.State.Running)
 	})
 	if len(a.LogLines("next attempt in")) == 0 {
 		t.Error("backoff not reported")
 	}
-	waitFor(t, 45*time.Second, "restart after backoff", func() bool { return Inspect(t, syslogName).State.Running })
+	waitFor(t, 45*time.Second, "replacement after backoff", func() bool {
+		c := Inspect(t, syslogName) // nil between rm and run
+		return c.Managed() && c.State.Running
+	})
 	waitFor(t, 5*checkEvery, "heartbeats resume", func() bool { return len(b.Heartbeats()) > hb })
 	mRecovered := marker("recovered")
 	deliver(t, b, 514, mRecovered, ftdLine(mRecovered))

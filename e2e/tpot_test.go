@@ -46,12 +46,14 @@ func TestTPot(t *testing.T) {
 	docker(t, "run", "-d", "--name", esName, "--network", tpotNetwork, "-p", "127.0.0.1::9200",
 		"-e", "discovery.type=single-node", "-e", "xpack.security.enabled=false",
 		"-e", "ES_JAVA_OPTS=-Xms512m -Xmx512m", esImage)
+	// Bounded, so a stalled Elasticsearch cannot hang a waitFor callback.
+	client := &http.Client{Timeout: 5 * time.Second}
 	es := "http://" + docker(t, "port", esName, "9200/tcp")
 	if i := strings.Index(es, "\n"); i > 0 {
 		es = es[:i]
 	}
 	waitFor(t, 3*time.Minute, "Elasticsearch", func() bool {
-		resp, err := http.Get(es + "/_cluster/health?wait_for_status=yellow&timeout=1s")
+		resp, err := client.Get(es + "/_cluster/health?wait_for_status=yellow&timeout=1s")
 		if err != nil {
 			return false
 		}
@@ -80,7 +82,7 @@ func TestTPot(t *testing.T) {
 			"type":       "Cowrie", "eventid": "cowrie.login.failed",
 			"src_ip": "203.0.113.77", "t-pot_hostname": "tpot-e2e", "message": m,
 		})
-		resp, err := http.Post(index, "application/json", bytes.NewReader(doc))
+		resp, err := client.Post(index, "application/json", bytes.NewReader(doc))
 		if err == nil {
 			resp.Body.Close()
 		}
