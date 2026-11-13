@@ -59,6 +59,7 @@ Every minute the aggregator checks the containers:
 * Containers the settings no longer ask for are removed.
 * A container is recreated only when its configuration changed.
 * A container is restarted if it stopped, if its Docker health check fails, or (for Logstash) if its recent logs show `UnknownHostException`. Repeated restarts wait 30 s, then twice as long each time, up to 10 minutes. The wait goes back to zero only after the container has stayed healthy for 10 minutes, so a container that crashes shortly after every start keeps backing off.
+* The syslog relays treat the collector's 400 (a message it cannot parse, e.g. a Suricata EVE event that is not an alert) and 404 (unknown sensor) as final and move on. Other errors (5xx, 429, network) keep the message queued in memory, and syslog-ng sends it again after reconnecting, which it does 60 s later (`time-reopen`).
 * syslog-ng's health check is `syslog-ng-ctl stats`; it fails if syslog-ng did not accept its config. syslog-ng's own messages are in `docker logs nfg-syslog`; they are no longer sent to the collector.
 * Every docker call has a time limit (2 minutes, 15 for `docker run`, which may pull the image). A hung Docker daemon shows up as a `timed out` problem in the log and stops heartbeats, instead of freezing the aggregator.
 * A heartbeat is sent only when every container the settings ask for is running and healthy.
@@ -108,7 +109,7 @@ The end-to-end tests (`e2e/`, build tag `e2e`) build `nfgtfa` and run it against
 | `TestControllerOutage` | relays and heartbeats continue while the controller is down; on reconnect the settings changed meanwhile are applied without a push |
 | `TestRestartWithoutController` | after a crash the aggregator starts from its saved settings without the controller and keeps the running container |
 | `TestContainerRecovery` | a stopped container is replaced from the same spec; a second stop backs off 30 s with heartbeats paused |
-| `TestCollectorErrors` | after a 5xx or 429 syslog-ng keeps the message queued and resends it once it reconnects (`time-reopen`, 60 s), in order with the messages behind it; a 400 is dropped once and does not hold up later messages |
+| `TestCollectorErrors` | after a 5xx or 429 syslog-ng keeps the message queued and resends it once it reconnects (`time-reopen`, 60 s), in order with the messages behind it; a 400 is not resent and the next message goes out at once |
 | `TestShutdown` | SIGTERM removes the containers and exits 0 |
 | `TestUnsafeSecret` | a secret syslog-ng cannot carry starts nothing and sends no heartbeat |
 | `TestUpgradeFromV1` | a real v1.0.9 killed mid-run (its compose container and network left behind) is replaced cleanly; set `NFGTFA_V1_BINARY` to the old binary, otherwise skipped |
