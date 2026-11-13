@@ -337,14 +337,21 @@ func TestCollectorErrors(t *testing.T) {
 		t.Errorf("message behind the failed one was sent at %s, before the retry at %s", first, retried)
 	}
 
+	// The collector answers 400 to everything it cannot parse (for the IDS
+	// relays: every EVE event that is not an alert) and 404 for an unknown
+	// sensor, so a rejection must not hold up the relay.
 	bad, after := marker("bad"), marker("after")
 	sendSyslog(t, 514, ftdLine(bad), ftdLine(after))
-	waitFor(t, 30*time.Second, "message after a rejected one", func() bool {
+	waitFor(t, 90*time.Second, "message after a rejected one", func() bool {
 		_, ok := acceptedAt(after)
 		return ok
 	})
 	if n := len(b.Collected(bad)); n != 1 {
 		t.Errorf("rejected message sent %d times, want once (dropped)", n)
+	}
+	sent, _ := acceptedAt(after)
+	if stall := sent.Sub(b.Collected(bad)[0].At); stall > 10*time.Second {
+		t.Errorf("the message after a rejected one waited %s", stall.Round(time.Second))
 	}
 }
 
