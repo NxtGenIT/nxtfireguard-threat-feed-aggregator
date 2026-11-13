@@ -107,8 +107,8 @@ The end-to-end tests (`e2e/`, build tag `e2e`) build `nfgtfa` and run it against
 | `TestSettingsPushed` | pushes over the update stream: unchanged settings keep the container, a changed set recreates it, disabling removes it |
 | `TestControllerOutage` | relays and heartbeats continue while the controller is down; on reconnect the settings changed meanwhile are applied without a push |
 | `TestRestartWithoutController` | after a crash the aggregator starts from its saved settings without the controller and keeps the running container |
-| `TestContainerRecovery` | a stopped container is restarted; a second stop backs off 30 s with heartbeats paused |
-| `TestCollectorErrors` | the collector's 5xx and 429 are retried until accepted, a 400 is dropped once and does not hold up later messages |
+| `TestContainerRecovery` | a stopped container is replaced from the same spec; a second stop backs off 30 s with heartbeats paused |
+| `TestCollectorErrors` | after a 5xx or 429 syslog-ng keeps the message queued and resends it once it reconnects (`time-reopen`, 60 s), in order with the messages behind it; a 400 is dropped once and does not hold up later messages |
 | `TestShutdown` | SIGTERM removes the containers and exits 0 |
 | `TestUnsafeSecret` | a secret syslog-ng cannot carry starts nothing and sends no heartbeat |
 | `TestUpgradeFromV1` | a real v1.0.9 killed mid-run (its compose container and network left behind) is replaced cleanly; set `NFGTFA_V1_BINARY` to the old binary, otherwise skipped |

@@ -240,9 +240,9 @@ func TestRestartWithoutController(t *testing.T) {
 	deliver(t, b, 514, mSaved, ftdLine(mSaved))
 }
 
-// TestContainerRecovery: a stopped container is started again at once; if
-// it stops again soon after, the restart backs off for 30s, and no heartbeat
-// is sent while it is down.
+// TestContainerRecovery: a stopped container is replaced at once (removed
+// and created again from the same spec); if it stops again soon after, the
+// next attempt backs off for 30s, and no heartbeat is sent while it is down.
 func TestContainerRecovery(t *testing.T) {
 	b := newBackend(t, ftdOnly)
 	a := StartAggregator(t, "", t.TempDir(), Env(b, t.TempDir()))
@@ -251,13 +251,21 @@ func TestContainerRecovery(t *testing.T) {
 
 	docker(t, "stop", "-t", "1", syslogName)
 	var second *Container
-	waitFor(t, 30*time.Second, "restart after stop", func() bool {
+	waitFor(t, 30*time.Second, "replacement after stop", func() bool {
 		second = Inspect(t, syslogName)
-		return second.State.Running && second.State.StartedAt.After(first.State.StartedAt)
+		return second.Managed() && second.State.Running && second.State.StartedAt.After(first.State.StartedAt)
 	})
-	if second.ID != first.ID {
-		t.Fatalf("stopped container %.12s was replaced by %.12s, expected a restart of the same container", first.ID, second.ID)
+	if h1, h2 := first.Config.Labels["nfg.spec-hash"], second.Config.Labels["nfg.spec-hash"]; h1 != h2 {
+		t.Fatalf("replacement has spec %s, want the unchanged %s", h2, h1)
 	}
+	waitFor(t, 10*time.Second, "reason logged", func() bool {
+		for _, l := range a.LogLines("container started") {
+			if l["reason"] == "not running" {
+				return true
+			}
+		}
+		return false
+	})
 
 	docker(t, "stop", "-t", "1", syslogName)
 	time.Sleep(checkEvery) // a heartbeat triggered just before the stop may still arrive
@@ -274,9 +282,11 @@ func TestContainerRecovery(t *testing.T) {
 	deliver(t, b, 514, mRecovered, ftdLine(mRecovered))
 }
 
-// TestCollectorErrors: syslog-ng retries a collector that fails with 5xx or
-// 429, and drops a message the collector rejects with 400 without holding
-// up the ones after it (response-action(400 => drop)).
+// TestCollectorErrors: when the collector answers 5xx or 429, syslog-ng keeps
+// the message queued and sends it again after reconnecting (time-reopen,
+// 60s by default), holding back the messages behind it in order. A 400 is
+// dropped at once (response-action(400 => drop)) and does not block the
+// ones after it.
 func TestCollectorErrors(t *testing.T) {
 	b := newBackend(t, ftdOnly)
 	StartAggregator(t, "", t.TempDir(), Env(b, t.TempDir()))
@@ -286,7 +296,7 @@ func TestCollectorErrors(t *testing.T) {
 
 	b.RespondWith(func(r Request, attempt int) int {
 		switch {
-		case strings.Contains(r.Body, "m-retry") && attempt <= 2:
+		case strings.Contains(r.Body, "m-retry") && attempt == 1:
 			return http.StatusServiceUnavailable
 		case strings.Contains(r.Body, "m-limited") && attempt == 1:
 			return http.StatusTooManyRequests
@@ -295,31 +305,44 @@ func TestCollectorErrors(t *testing.T) {
 		}
 		return http.StatusOK
 	})
-	accepted := func(m string) func() bool {
-		return func() bool {
-			for _, r := range b.Collected(m) {
-				if r.Status == http.StatusOK {
-					return true
-				}
+	acceptedAt := func(m string) (time.Time, bool) {
+		for _, r := range b.Collected(m) {
+			if r.Status == http.StatusOK {
+				return r.At, true
 			}
-			return false
 		}
+		return time.Time{}, false
 	}
 
-	retry := marker("retry")
-	sendSyslog(t, 514, ftdLine(retry))
-	waitFor(t, time.Minute, "5xx retried until accepted", accepted(retry))
-	if n := len(b.Collected(retry)); n != 3 {
-		t.Errorf("message sent %d times, want 2 failures + 1 success", n)
+	retry, limited := marker("retry"), marker("limited")
+	sendSyslog(t, 514, ftdLine(retry), ftdLine(limited))
+	waitFor(t, 3*time.Minute, "5xx and 429 retried until accepted", func() bool {
+		_, ok := acceptedAt(limited)
+		return ok
+	})
+	retried, _ := acceptedAt(retry)
+	got := b.Collected(retry)
+	if len(got) != 2 {
+		t.Fatalf("5xx message sent %d times, want 2", len(got))
 	}
-
-	limited := marker("limited")
-	sendSyslog(t, 514, ftdLine(limited))
-	waitFor(t, time.Minute, "429 retried until accepted", accepted(limited))
+	if stall := retried.Sub(got[0].At); stall < 30*time.Second {
+		t.Errorf("5xx retried after %s; expected syslog-ng's time-reopen (60s)", stall)
+	} else {
+		t.Logf("5xx retried after %s", stall.Round(time.Second))
+	}
+	if n := len(b.Collected(limited)); n != 2 {
+		t.Errorf("429 message sent %d times, want 2", n)
+	}
+	if first := b.Collected(limited)[0].At; first.Before(retried) {
+		t.Errorf("message behind the failed one was sent at %s, before the retry at %s", first, retried)
+	}
 
 	bad, after := marker("bad"), marker("after")
 	sendSyslog(t, 514, ftdLine(bad), ftdLine(after))
-	waitFor(t, time.Minute, "message after a rejected one", accepted(after))
+	waitFor(t, 30*time.Second, "message after a rejected one", func() bool {
+		_, ok := acceptedAt(after)
+		return ok
+	})
 	if n := len(b.Collected(bad)); n != 1 {
 		t.Errorf("rejected message sent %d times, want once (dropped)", n)
 	}
