@@ -1,4 +1,7 @@
 version: "2"
+run:
+  # Lint the docker and end-to-end tests too.
+  build-tags: [docker, e2e]
 linters:
   enable:
     - bodyclose

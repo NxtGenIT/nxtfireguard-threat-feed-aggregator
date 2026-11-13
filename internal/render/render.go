@@ -28,6 +28,13 @@ type Collector struct {
 // so its own messages (startup, errors, stats) end up in `docker logs
 // nfg-syslog`. Earlier versions fed them into the Suricata relay, which sent
 // syslog-ng's complaints about a failing collector to that same collector.
+//
+// The collector answers 400 to a message it cannot parse (for the IDS relays,
+// every EVE event that is not an alert) and 404 for an unknown sensor;
+// resending would not help. Those answers count as success: syslog-ng's
+// "drop" would discard the message too, but also disconnect and wait
+// time-reopen (60s) before sending the next one, so every rejection stalled
+// the relay for a minute.
 func Syslog(c Collector, enabled []services.Service) string {
 	var b strings.Builder
 	b.WriteString("@version: 4.7\n@include \"scl.conf\"\n")
@@ -59,7 +66,7 @@ destination d_http_%s {
 		msg_data_in_header(no)
 		headers("X-AUTH_KEY: `+"`%s`"+`", "X-AGGREGATOR_NAME: %s")
 		body("<$PRI>$YEAR-$MONTH-${DAY}T$HOUR:$MIN:$SEC.$MSEC $HOST $PROGRAM%s$MSG")
-		response-action(400 => drop, 404 => drop)
+		response-action(400 => success, 404 => success)
 	);
 };
 `, s.ID, syslogString(c.URL), s.Route, AuthKeyEnv, syslogString(c.Name), sep)

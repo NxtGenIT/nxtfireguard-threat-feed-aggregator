@@ -36,10 +36,23 @@ var (
 	retrySyncAfter = time.Minute
 )
 
+// checkEveryOverride lets the end-to-end tests (e2e/) build a binary with a
+// faster loop: go build -ldflags "-X main.checkEveryOverride=2s". Release
+// builds leave it empty.
+var checkEveryOverride string
+
 const shutdownGrace = 30 * time.Second
 
 func main() {
 	fmt.Fprint(os.Stderr, logo)
+	if checkEveryOverride != "" {
+		d, err := time.ParseDuration(checkEveryOverride)
+		if err != nil || d <= 0 {
+			fmt.Fprintln(os.Stderr, "invalid checkEveryOverride:", checkEveryOverride)
+			os.Exit(1)
+		}
+		checkEvery = d
+	}
 	// A .env next to the binary is the documented setup; real environment
 	// variables win over it.
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {

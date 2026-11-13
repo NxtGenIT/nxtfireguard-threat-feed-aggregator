@@ -36,8 +36,9 @@ func toggles(mask int) services.Toggles {
 }
 
 // The goldens are the old output for every combination of services, with the
-// inline secret replaced by the environment reference and without the
-// internal() sources (syslog-ng logs to docker logs instead).
+// inline secret replaced by the environment reference, without the
+// internal() sources (syslog-ng logs to docker logs instead), and with 400
+// and 404 answered by "success" instead of "drop" (see Syslog).
 func TestSyslogMatchesPreviousOutput(t *testing.T) {
 	for mask := 0; mask < 32; mask++ {
 		want, err := os.ReadFile(fmt.Sprintf("testdata/syslog-%02d.conf", mask))
