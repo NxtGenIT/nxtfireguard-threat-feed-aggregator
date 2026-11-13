@@ -41,12 +41,13 @@ func TestUpgradeFromV1(t *testing.T) {
 	old.Kill()
 
 	a := StartAggregator(t, "", work, env)
-	waitRunning(t, syslogName, 3*time.Minute)
+	waitRunning(t, 3*time.Minute)
 	waitFor(t, 30*time.Second, "1.x compose network removed", func() bool { return legacyNetworks(t) == 0 })
 	if len(a.LogLines("removed networks left by older versions")) == 0 {
 		t.Error("legacy cleanup not logged")
 	}
-	got := deliver(t, b, 514, marker("upgraded"), time.Minute, ftdLine(marker("upgraded")))
+	mUpgraded := marker("upgraded")
+	got := deliver(t, b, 514, mUpgraded, ftdLine(mUpgraded))
 	if got.Header.Get("X-AUTH_KEY") != b.Secret {
 		t.Fatalf("X-AUTH_KEY %q after upgrade", got.Header.Get("X-AUTH_KEY"))
 	}

@@ -22,11 +22,11 @@ func newBackend(t *testing.T, s Settings) *Backend {
 }
 
 // waitRunning waits until the managed syslog container runs and returns it.
-func waitRunning(t *testing.T, name string, timeout time.Duration) *Container {
+func waitRunning(t *testing.T, timeout time.Duration) *Container {
 	t.Helper()
 	var c *Container
-	waitFor(t, timeout, name+" running", func() bool {
-		c = Inspect(t, name)
+	waitFor(t, timeout, syslogName+" running", func() bool {
+		c = Inspect(t, syslogName)
 		return c.Managed() && c.State.Running
 	})
 	return c
@@ -60,7 +60,7 @@ func TestColdStart(t *testing.T) {
 	})
 	waitFor(t, 30*time.Second, "update stream", func() bool { open, _ := b.Streams(); return open == 1 })
 
-	c := waitRunning(t, syslogName, 3*time.Minute)
+	c := waitRunning(t, 3*time.Minute)
 	ports := c.UDPPorts()
 	slices.Sort(ports)
 	if want := []string{"1025/udp", "1026/udp", "1027/udp", "1028/udp", "514/udp"}; !slices.Equal(ports, want) {
@@ -118,7 +118,7 @@ func TestColdStart(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := marker(tc.name)
-			got := deliver(t, b, tc.port, m, time.Minute, append(slices.Clone(tc.dropped), tc.line(m))...)
+			got := deliver(t, b, tc.port, m, append(slices.Clone(tc.dropped), tc.line(m))...)
 			if got.Path != tc.route {
 				t.Errorf("path %s, want %s", got.Path, tc.route)
 			}
@@ -158,8 +158,9 @@ func TestSettingsPushed(t *testing.T) {
 	b := newBackend(t, ftdOnly)
 	a := StartAggregator(t, "", t.TempDir(), Env(b, t.TempDir()))
 	waitFor(t, 30*time.Second, "update stream", func() bool { open, _ := b.Streams(); return open == 1 })
-	id := waitRunning(t, syslogName, 3*time.Minute).ID
-	deliver(t, b, 514, marker("before"), time.Minute, ftdLine(marker("before")))
+	id := waitRunning(t, 3*time.Minute).ID
+	mBefore := marker("before")
+	deliver(t, b, 514, mBefore, ftdLine(mBefore))
 
 	// The same settings again change nothing.
 	b.Push(ftdOnly)
@@ -174,7 +175,7 @@ func TestSettingsPushed(t *testing.T) {
 		return c.Managed() && c.State.Running && c.ID != id && slices.Contains(c.UDPPorts(), "1025/udp")
 	})
 	m := marker("ise")
-	got := deliver(t, b, 1025, m, time.Minute, rfc3164(181, "ise01", "CISE_Failed_Attempts:", m))
+	got := deliver(t, b, 1025, m, rfc3164(181, "ise01", "CISE_Failed_Attempts:", m))
 	if got.Path != "/ise" {
 		t.Fatalf("ISE line went to %s", got.Path)
 	}
@@ -186,7 +187,7 @@ func TestSettingsPushed(t *testing.T) {
 	waitFor(t, 30*time.Second, "syslog container removed", func() bool { return Inspect(t, syslogName) == nil })
 
 	b.Push(ftdOnly)
-	waitRunning(t, syslogName, time.Minute)
+	waitRunning(t, time.Minute)
 }
 
 // TestControllerOutage: while the controller is down the relays keep
@@ -196,7 +197,7 @@ func TestControllerOutage(t *testing.T) {
 	b := newBackend(t, ftdOnly)
 	a := StartAggregator(t, "", t.TempDir(), Env(b, t.TempDir()))
 	waitFor(t, 30*time.Second, "update stream", func() bool { open, _ := b.Streams(); return open == 1 })
-	waitRunning(t, syslogName, 3*time.Minute)
+	waitRunning(t, 3*time.Minute)
 	waitFor(t, 30*time.Second, "heartbeat", func() bool { return len(b.Heartbeats()) > 0 })
 
 	b.SetDown(true)
@@ -204,7 +205,8 @@ func TestControllerOutage(t *testing.T) {
 	waitFor(t, 15*time.Second, "stream loss noticed", func() bool { return len(a.LogLines("update stream down")) > 0 })
 	before := len(b.Heartbeats())
 	waitFor(t, 5*checkEvery, "heartbeats during the outage", func() bool { return len(b.Heartbeats()) >= before+2 })
-	deliver(t, b, 514, marker("outage"), time.Minute, ftdLine(marker("outage")))
+	mOutage := marker("outage")
+	deliver(t, b, 514, mOutage, ftdLine(mOutage))
 
 	b.SetDown(false)
 	waitFor(t, 45*time.Second, "reconnect", func() bool { open, total := b.Streams(); return open == 1 && total >= 2 })
@@ -221,7 +223,7 @@ func TestRestartWithoutController(t *testing.T) {
 	b := newBackend(t, ftdOnly)
 	work, state := t.TempDir(), t.TempDir()
 	a := StartAggregator(t, "", work, Env(b, state))
-	id := waitRunning(t, syslogName, 3*time.Minute).ID
+	id := waitRunning(t, 3*time.Minute).ID
 	a.Kill()
 
 	b.SetDown(true)
@@ -234,7 +236,8 @@ func TestRestartWithoutController(t *testing.T) {
 	if c := Inspect(t, syslogName); c.ID != id {
 		t.Fatal("container recreated although its settings did not change")
 	}
-	deliver(t, b, 514, marker("saved"), time.Minute, ftdLine(marker("saved")))
+	mSaved := marker("saved")
+	deliver(t, b, 514, mSaved, ftdLine(mSaved))
 }
 
 // TestContainerRecovery: a stopped container is started again at once; if
@@ -243,7 +246,7 @@ func TestRestartWithoutController(t *testing.T) {
 func TestContainerRecovery(t *testing.T) {
 	b := newBackend(t, ftdOnly)
 	a := StartAggregator(t, "", t.TempDir(), Env(b, t.TempDir()))
-	first := waitRunning(t, syslogName, 3*time.Minute)
+	first := waitRunning(t, 3*time.Minute)
 	waitFor(t, 30*time.Second, "heartbeat", func() bool { return len(b.Heartbeats()) > 0 })
 
 	docker(t, "stop", "-t", "1", syslogName)
@@ -253,7 +256,7 @@ func TestContainerRecovery(t *testing.T) {
 		return second.State.Running && second.State.StartedAt.After(first.State.StartedAt)
 	})
 	if second.ID != first.ID {
-		t.Fatal("stopped container was recreated, expected a restart of the same container")
+		t.Fatalf("stopped container %.12s was replaced by %.12s, expected a restart of the same container", first.ID, second.ID)
 	}
 
 	docker(t, "stop", "-t", "1", syslogName)
@@ -267,7 +270,8 @@ func TestContainerRecovery(t *testing.T) {
 	}
 	waitFor(t, 45*time.Second, "restart after backoff", func() bool { return Inspect(t, syslogName).State.Running })
 	waitFor(t, 5*checkEvery, "heartbeats resume", func() bool { return len(b.Heartbeats()) > hb })
-	deliver(t, b, 514, marker("recovered"), time.Minute, ftdLine(marker("recovered")))
+	mRecovered := marker("recovered")
+	deliver(t, b, 514, mRecovered, ftdLine(mRecovered))
 }
 
 // TestCollectorErrors: syslog-ng retries a collector that fails with 5xx or
@@ -276,8 +280,9 @@ func TestContainerRecovery(t *testing.T) {
 func TestCollectorErrors(t *testing.T) {
 	b := newBackend(t, ftdOnly)
 	StartAggregator(t, "", t.TempDir(), Env(b, t.TempDir()))
-	waitRunning(t, syslogName, 3*time.Minute)
-	deliver(t, b, 514, marker("warmup"), time.Minute, ftdLine(marker("warmup")))
+	waitRunning(t, 3*time.Minute)
+	mWarmup := marker("warmup")
+	deliver(t, b, 514, mWarmup, ftdLine(mWarmup))
 
 	b.RespondWith(func(r Request, attempt int) int {
 		switch {
@@ -324,7 +329,7 @@ func TestCollectorErrors(t *testing.T) {
 func TestShutdown(t *testing.T) {
 	b := newBackend(t, ftdOnly)
 	a := StartAggregator(t, "", t.TempDir(), Env(b, t.TempDir()))
-	waitRunning(t, syslogName, 3*time.Minute)
+	waitRunning(t, 3*time.Minute)
 	if err := a.Stop(syscall.SIGTERM, 40*time.Second); err != nil {
 		t.Fatalf("exit after SIGTERM: %v", err)
 	}

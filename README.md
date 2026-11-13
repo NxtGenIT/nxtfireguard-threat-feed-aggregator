@@ -75,6 +75,7 @@ Containers created by older versions (docker compose) are removed on the first c
 make test         # vet + unit tests with the race detector
 make lint         # golangci-lint
 make docker-test  # starts the real syslog-ng image (needs Docker)
+make e2e          # end-to-end tests (needs Docker on Linux), see Testing
 ```
 
 The tests for the syslog-ng and Logstash config compare the output with the configs the previous implementation generated (minus its `internal()` sources), for every combination of relays (`internal/render/testdata`).
@@ -89,6 +90,31 @@ The tests for the syslog-ng and Logstash config compare the output with the conf
 | `internal/docker` | container specs and the docker CLI |
 | `internal/reconcile` | desired containers vs. running ones |
 | `internal/state` | files in the state directory |
+
+## Testing
+
+| Suite | Command | Needs | What it covers |
+|---|---|---|---|
+| unit | `make test` | Go | every package, with fakes for docker and the backend |
+| docker | `make docker-test` | Docker | the real syslog-ng image accepts the generated config and its health check passes |
+| end-to-end | `make e2e` | Docker, Linux | the real binary end to end, see below |
+
+The end-to-end tests (`e2e/`, build tag `e2e`) build `nfgtfa` and run it against a fake NxtFireGuard backend: one HTTP server playing the tfa-controller (`/sync/config` and the `/sync/ws/updates` stream), the heartbeat monitor (`/ping/<id>`) and the threat collector. It records every request and can script failures. Everything else is real: the docker daemon, the syslog-ng, Logstash and Elasticsearch images, UDP syslog sent to the published ports, and the HTTP requests syslog-ng and Logstash make. Containers reach the fake through the docker bridge gateway, which is why the suite needs Linux. The binary is built with `-X main.checkEveryOverride=2s`, so the check loop runs every 2 s instead of every minute.
+
+| Test | Checks |
+|---|---|
+| `TestColdStart` | settings sync with credentials, all relays and ports, heartbeat only after the container started, each relay's route, headers and body, the OPNsense/pfSense EVE-only filter, the docker health check |
+| `TestSettingsPushed` | pushes over the update stream: unchanged settings keep the container, a changed set recreates it, disabling removes it |
+| `TestControllerOutage` | relays and heartbeats continue while the controller is down; on reconnect the settings changed meanwhile are applied without a push |
+| `TestRestartWithoutController` | after a crash the aggregator starts from its saved settings without the controller and keeps the running container |
+| `TestContainerRecovery` | a stopped container is restarted; a second stop backs off 30 s with heartbeats paused |
+| `TestCollectorErrors` | the collector's 5xx and 429 are retried until accepted, a 400 is dropped once and does not hold up later messages |
+| `TestShutdown` | SIGTERM removes the containers and exits 0 |
+| `TestUnsafeSecret` | a secret syslog-ng cannot carry starts nothing and sends no heartbeat |
+| `TestUpgradeFromV1` | a real v1.0.9 killed mid-run (its compose container and network left behind) is replaced cleanly; set `NFGTFA_V1_BINARY` to the old binary, otherwise skipped |
+| `TestTPot` | without T-Pot's network the problem is reported and no heartbeat is sent; with the network and an Elasticsearch on it, Logstash forwards new documents to `/t-pot` |
+
+CI runs them on every pull request and nightly, as two parallel jobs (`syslog` and `tpot`). The tests remove the `nfg-syslog` and `nfg-logstash` containers and the `tpotce_nginx_local` network, so do not run them on a host that runs a real aggregator or T-Pot.
 
 ## License
 

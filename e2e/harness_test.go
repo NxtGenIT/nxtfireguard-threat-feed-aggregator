@@ -56,7 +56,7 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		defer os.RemoveAll(tmp)
+		defer func() { _ = os.RemoveAll(tmp) }()
 		repoDir, _ = filepath.Abs("..")
 		binary = filepath.Join(tmp, "nfgtfa")
 		build := exec.Command("go", "build", "-race",
@@ -174,11 +174,7 @@ func StartAggregator(t *testing.T, bin, dir string, env map[string]string) *Agg 
 	t.Cleanup(func() {
 		if t.Failed() {
 			t.Logf("aggregator (%s) output:\n%s", filepath.Base(bin), a.logs.String())
-			for _, c := range []string{syslogName, logstashName} {
-				if out, err := exec.Command("docker", "logs", "--tail", "50", c).CombinedOutput(); err == nil {
-					t.Logf("docker logs %s:\n%s", c, out)
-				}
-			}
+			diagnose(t)
 		}
 		a.Kill()
 		cleanDocker()
@@ -303,7 +299,7 @@ func sendSyslog(t *testing.T, port int, lines ...string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	for _, l := range lines {
 		if _, err := c.Write([]byte(l)); err != nil {
 			t.Fatal(err)
@@ -316,9 +312,9 @@ func sendSyslog(t *testing.T, port int, lines ...string) {
 // may not listen yet right after its container started, so a round may be
 // lost. Lines are re-sent as a group, so anything sent before marker in the
 // same round was processed before it.
-func deliver(t *testing.T, b *Backend, port int, marker string, timeout time.Duration, lines ...string) Request {
+func deliver(t *testing.T, b *Backend, port int, marker string, lines ...string) Request {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := time.Now().Add(time.Minute)
 	for {
 		sendSyslog(t, port, lines...)
 		for wait := time.Now().Add(3 * time.Second); time.Now().Before(wait); time.Sleep(100 * time.Millisecond) {
@@ -338,4 +334,26 @@ func rfc3164(pri int, host, tag, msg string) string {
 
 func marker(what string) string {
 	return fmt.Sprintf("m-%s-%d", what, time.Now().UnixNano())
+}
+
+// diagnose logs what helps to tell where a message got lost.
+func diagnose(t *testing.T) {
+	t.Helper()
+	run := func(name string, args ...string) {
+		out, _ := exec.Command(name, args...).CombinedOutput()
+		t.Logf("$ %s %s\n%s", name, strings.Join(args, " "), out)
+	}
+	run("docker", "ps", "-a", "--format", "{{.ID}} {{.Names}} {{.Status}} {{.Ports}} {{.Labels}}")
+	for _, c := range []string{syslogName, logstashName} {
+		if Inspect(t, c) == nil {
+			continue
+		}
+		run("docker", "logs", "--tail", "50", c)
+		if c == syslogName {
+			run("docker", "exec", c, "syslog-ng-ctl", "stats", "-c", "/config/syslog-ng.ctl")
+			run("docker", "exec", c, "cat", "/config/syslog-ng.conf")
+		}
+	}
+	run("sh", "-c", "ss -ulpn | grep -E ':(514|102[5-8]) ' || true")
+	run("sh", "-c", "sudo -n conntrack -L -p udp 2>/dev/null | grep -E 'dport=(514|102[5-8]) ' | head -20 || true")
 }
